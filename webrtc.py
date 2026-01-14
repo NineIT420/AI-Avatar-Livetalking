@@ -106,38 +106,41 @@ class PlayerStreamTrack(MediaStreamTrack):
             return self._timestamp, AUDIO_TIME_BASE
 
     async def recv(self) -> Union[Frame, Packet]:
-        # Ensure player is started
+        # frame = self.frames[self.counter % 30]            
         self._player._start(self)
-        
-        # Get frame from queue - this blocks until frame is available
-        # This ensures frames are consumed in order, maintaining sync
-        frame, eventpoint = await self._queue.get()
-        
-        # Calculate timestamp based on shared start time
-        # This ensures audio and video timestamps are synchronized
+        # if self.kind == 'video':
+        #     frame = await self._queue.get()
+        # else: #audio
+        #     if hasattr(self, "_timestamp"):
+        #         wait = self._start + self._timestamp / SAMPLE_RATE + AUDIO_PTIME - time.time()
+        #         if wait>0:
+        #             await asyncio.sleep(wait)
+        #         if self._queue.qsize()<1:
+        #             #frame = AudioFrame(format='s16', layout='mono', samples=320)
+        #             audio = np.zeros((1, 320), dtype=np.int16)
+        #             frame = AudioFrame.from_ndarray(audio, layout='mono', format='s16')
+        #             frame.sample_rate=16000
+        #         else:
+        #             frame = await self._queue.get()
+        #     else:
+        #         frame = await self._queue.get()
+        frame,eventpoint = await self._queue.get()
         pts, time_base = await self.next_timestamp()
         frame.pts = pts
         frame.time_base = time_base
-        
-        # Notify about events if present
         if eventpoint and self._player is not None:
             self._player.notify(eventpoint)
-        
-        # Validate frame
         if frame is None:
             self.stop()
             raise Exception
-        
-        # Track FPS for video only
         if self.kind == 'video':
             self.totaltime += (time.perf_counter() - self.lasttime)
             self.framecount += 1
             self.lasttime = time.perf_counter()
-            if self.framecount == 100:
+            if self.framecount==100:
                 mylogger.info(f"------actual avg final fps:{self.framecount/self.totaltime:.4f}")
                 self.framecount = 0
-                self.totaltime = 0
-        
+                self.totaltime=0
         return frame
     
     def stop(self):
