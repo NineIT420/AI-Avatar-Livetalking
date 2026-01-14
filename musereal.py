@@ -144,19 +144,11 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
     count=0
     counttime=0
     logger.info('start inference')
-    consecutive_empty = 0
-    max_consecutive_empty = 10  # Allow some empty checks before warning
-    
     while not quit_event.is_set():
         starttime=time.perf_counter()
         try:
-            # Reduced timeout from 1s to 0.1s for faster response (Solution 6)
-            whisper_chunks = audio_feat_queue.get(block=True, timeout=0.1)
-            consecutive_empty = 0
+            whisper_chunks = audio_feat_queue.get(block=True, timeout=1)
         except queue.Empty:
-            consecutive_empty += 1
-            if consecutive_empty > max_consecutive_empty:
-                logger.debug(f"Inference waiting for features ({consecutive_empty} consecutive empty checks)")
             continue
         is_all_silence=True
         audio_frames = []
@@ -350,23 +342,9 @@ class MuseReal(BaseReal):
             #     print(f"------actual avg infer fps:{count/totaltime:.4f}")
             #     count=0
             #     totaltime=0
-            # Improved backpressure handling - NO FRAME SKIPPING
-            # Use backpressure to slow down production instead of dropping frames
-            if video_track:
-                video_queue_size = video_track._queue.qsize()
-                # Adaptive backpressure based on queue state
-                if video_queue_size >= 1.5 * self.opt.batch_size:
-                    queue_ratio = video_queue_size / (self.opt.batch_size * 2)
-                    sleep_time = 0.02 * min(queue_ratio, 2.0)  # Adaptive sleep, max 40ms
-                    logger.debug(f'Backpressure: qsize={video_queue_size}, sleep={sleep_time:.3f}s')
-                    time.sleep(sleep_time)
-                # If queue is getting full, slow down ASR processing (backpressure)
-                elif video_queue_size >= 70:
-                    # Slow down instead of skipping - ensures no frame loss
-                    sleep_time = 0.05 * min((video_queue_size - 60) / 10, 2.0)  # Up to 100ms
-                    logger.debug(f'Queue full ({video_queue_size}), slowing ASR processing: {sleep_time:.3f}s')
-                    time.sleep(sleep_time)
-                    # Continue processing - don't skip
+            if video_track and video_track._queue.qsize()>=1.5*self.opt.batch_size:
+                logger.debug('sleep qsize=%d',video_track._queue.qsize())
+                time.sleep(0.04*video_track._queue.qsize()*0.8)
             # if video_track._queue.qsize()>=5:
             #     print('sleep qsize=',video_track._queue.qsize())
             #     time.sleep(0.04*video_track._queue.qsize()*0.8)
