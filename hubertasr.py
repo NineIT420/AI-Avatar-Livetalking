@@ -27,6 +27,13 @@ class HubertASR(BaseASR):
             return
         
         inputs = np.concatenate(self.frames)  # [N * chunk]
+        # Apply additional gain to enhance mouth movement detection
+        if hasattr(self, 'audio_gain') and self.audio_gain != 1.0:
+            inputs = inputs * self.audio_gain
+            # Normalize to prevent clipping
+            max_val = np.abs(inputs).max()
+            if max_val > 1.0:
+                inputs = inputs / max_val
 
         mel = self.audio_processor.get_hubert_from_16k_speech(inputs)
         mel_chunks=self.audio_processor.feature2chunks(feature_array=mel,fps=self.fps/2,batch_size=self.batch_size,audio_feat_length = self.audio_feat_length, start=self.stride_left_size/2)

@@ -37,12 +37,13 @@ class BaseASR:
         self.output_queue = mp.Queue()
 
         self.batch_size = opt.batch_size
+        self.audio_gain = getattr(opt, 'audio_gain', 1.0)  # Audio gain multiplier for mouth movement amplification
 
         self.frames = []
         self.stride_left_size = opt.l
         self.stride_right_size = opt.r
         #self.context_size = 10
-        self.feat_queue = mp.Queue(2)
+        self.feat_queue = mp.Queue(8)
 
         #self.warm_up()
 
@@ -57,11 +58,24 @@ class BaseASR:
         try:
             frame,eventpoint = self.queue.get(block=True,timeout=0.01)
             type = 0
+            # Apply audio gain to amplify mouth movement for speech frames
+            if self.audio_gain != 1.0:
+                frame = frame * self.audio_gain
+                # Prevent clipping by normalizing if too loud
+                max_val = np.abs(frame).max()
+                if max_val > 1.0:
+                    frame = frame / max_val
             #print(f'[INFO] get frame {frame.shape}')
         except queue.Empty:
             if self.parent and self.parent.curr_state>1: #播放自定义音频
                 frame = self.parent.get_audio_stream(self.parent.curr_state)
                 type = self.parent.curr_state
+                # Apply audio gain to custom audio too
+                if self.audio_gain != 1.0:
+                    frame = frame * self.audio_gain
+                    max_val = np.abs(frame).max()
+                    if max_val > 1.0:
+                        frame = frame / max_val
             else:
                 frame = np.zeros(self.chunk, dtype=np.float32)
                 type = 1
