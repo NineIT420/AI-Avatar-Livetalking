@@ -68,7 +68,7 @@ export function StatusDisplay({ status, latency }: StatusDisplayProps) {
         {status === 'connected' && latency !== null && (
           <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
             <div className="flex flex-col">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Network Latency</p>
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">Latency Speed</p>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
                   {latency}
