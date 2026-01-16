@@ -101,9 +101,7 @@ export function useWebRTC(): UseWebRTCReturn {
     setConnectionStatus('connecting');
     setLatency(null);
 
-    const config: RTCConfiguration = {
-      sdpSemantics: 'unified-plan',
-    };
+    const config: RTCConfiguration = {};
 
     if (useStun) {
       config.iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
@@ -117,7 +115,7 @@ export function useWebRTC(): UseWebRTCReturn {
       if (state === 'connected') {
         setConnectionStatus('connected');
         setIsConnected(true);
-      } else if (state === 'connecting' || state === 'checking') {
+      } else if (state === 'connecting') {
         setConnectionStatus('connecting');
       } else if (state === 'disconnected' || state === 'closed') {
         setConnectionStatus('disconnected');
@@ -134,7 +132,7 @@ export function useWebRTC(): UseWebRTCReturn {
       if (iceState === 'connected' || iceState === 'completed') {
         setConnectionStatus('connected');
         setIsConnected(true);
-      } else if (iceState === 'checking' || iceState === 'connecting') {
+      } else if (iceState === 'checking') {
         setConnectionStatus('connecting');
       } else if (iceState === 'disconnected' || iceState === 'closed' || iceState === 'failed') {
         setConnectionStatus(iceState === 'failed' ? 'failed' : 'disconnected');
@@ -177,7 +175,10 @@ export function useWebRTC(): UseWebRTCReturn {
 
       const answer: OfferResponse = await sendOffer(pc.localDescription!, useStun);
       setSessionId(answer.sessionid);
-      await pc.setRemoteDescription(answer);
+      await pc.setRemoteDescription({
+        type: answer.type as RTCSdpType,
+        sdp: answer.sdp
+      });
 
       setPeerConnection(pc);
 

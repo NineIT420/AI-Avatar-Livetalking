@@ -24,22 +24,16 @@ export default function Home() {
     stop();
   };
 
-  const handleStartRecord = async () => {
+  const handleToggleRecord = async () => {
     if (sessionId !== null) {
       try {
-        await startRecord(sessionId);
+        if (isRecording) {
+          await stopRecord(sessionId);
+        } else {
+          await startRecord(sessionId);
+        }
       } catch (error) {
-        console.error('Failed to start recording:', error);
-      }
-    }
-  };
-
-  const handleStopRecord = async () => {
-    if (sessionId !== null) {
-      try {
-        await stopRecord(sessionId);
-      } catch (error) {
-        console.error('Failed to stop recording:', error);
+        console.error(`Failed to ${isRecording ? 'stop' : 'start'} recording:`, error);
       }
     }
   };
@@ -67,8 +61,7 @@ export default function Home() {
               isRecording={isRecording}
               onStart={handleStart}
               onStop={handleStop}
-              onStartRecord={handleStartRecord}
-              onStopRecord={handleStopRecord}
+              onToggleRecord={handleToggleRecord}
               error={recordingError}
             />
           </div>
