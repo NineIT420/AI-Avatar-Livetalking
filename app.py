@@ -16,17 +16,10 @@
 ###############################################################################
 
 # server.py
-from flask import Flask, render_template,send_from_directory,request, jsonify
-from flask_sockets import Sockets
-import base64
 import json
-#import gevent
-#from gevent import pywsgi
-#from geventwebsocket.handler import WebSocketHandler
 import re
 import numpy as np
 from threading import Thread,Event
-#import multiprocessing
 import torch.multiprocessing as mp
 
 from aiohttp import web
@@ -36,23 +29,16 @@ from aiortc import RTCPeerConnection, RTCSessionDescription,RTCIceServer,RTCConf
 from aiortc.rtcrtpsender import RTCRtpSender
 from webrtc import HumanPlayer
 from basereal import BaseReal
-from llm import llm_response
 
 import argparse
 import random
-import shutil
 import asyncio
 import torch
 from typing import Dict
 from logger import logger
-import gc
 import ssl
 import os
 import warnings
-
-
-app = Flask(__name__)
-#sockets = Sockets(app)
 nerfreals:Dict[int, BaseReal] = {} #sessionid:BaseReal
 opt = None
 model = None
@@ -76,9 +62,6 @@ def build_nerfreal(sessionid:int)->BaseReal:
     elif opt.model == 'musetalk':
         from musereal import MuseReal
         nerfreal = MuseReal(opt,model,avatar)
-    # elif opt.model == 'ernerf':
-    #     from nerfreal import NeRFReal
-    #     nerfreal = NeRFReal(opt,model,avatar)
     elif opt.model == 'ultralight':
         from lightreal import LightReal
         nerfreal = LightReal(opt,model,avatar)
@@ -89,14 +72,6 @@ async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-    # if len(nerfreals) >= opt.max_session:
-    #     logger.info('reach max session')
-    #     return web.Response(
-    #         content_type="application/json",
-    #         text=json.dumps(
-    #             {"code": -1, "msg": "reach max session"}
-    #         ),
-    #     )
     sessionid = randN(6) #len(nerfreals)
     nerfreals[sessionid] = None
     logger.info('sessionid=%d, session num=%d',sessionid,len(nerfreals))
@@ -128,7 +103,6 @@ async def offer(request):
                 pcs.discard(pc)
                 if sessionid in nerfreals:
                     del nerfreals[sessionid]
-                # gc.collect()
         except KeyError as e:
             # Session already deleted, ignore
             logger.debug(f"Session {sessionid} already cleaned up: {e}")
@@ -158,7 +132,6 @@ async def offer(request):
         loop = asyncio.get_event_loop()
     player.start_render(loop)
 
-    #return jsonify({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type})
 
     return web.Response(
         content_type="application/json",
@@ -185,9 +158,6 @@ async def human(request):
 
         if params['type']=='echo':
             nerfreals[sessionid].put_msg_txt(params['text'])
-        elif params['type']=='chat':
-            asyncio.get_event_loop().run_in_executor(None, llm_response, params['text'],nerfreals[sessionid])                         
-            #nerfreals[sessionid].put_msg_txt(res)
 
         return web.Response(
             content_type="application/json",
@@ -261,11 +231,21 @@ async def humanaudio(request):
                     {"code": -1, "msg": f"Session {sessionid} not found"}
                 ),
             )
-        
+
         fileobj = form["file"]
         filename=fileobj.filename
         filebytes=fileobj.file.read()
-        nerfreals[sessionid].put_audio_file(filebytes)
+
+        # Check if this is a streaming chunk (has chunk_index)
+        chunk_index = form.get('chunk_index')
+        if chunk_index is not None:
+            # Handle streaming chunk
+            chunk_index = int(chunk_index)
+            nerfreals[sessionid].put_audio_chunk(filebytes, chunk_index)
+            logger.info(f'Streaming audio chunk {chunk_index} processed for session {sessionid}')
+        else:
+            # Handle complete audio file (legacy behavior)
+            nerfreals[sessionid].put_audio_file(filebytes)
 
         return web.Response(
             content_type="application/json",
@@ -342,7 +322,6 @@ async def record(request):
             )
         
         if params['type']=='start_record':
-            # nerfreals[sessionid].put_msg_txt(params['text'])
             nerfreals[sessionid].start_recording()
         elif params['type']=='end_record':
             nerfreals[sessionid].stop_recording()
@@ -452,8 +431,6 @@ async def run(push_url,sessionid):
     answer = await post(push_url,pc.localDescription.sdp)
     await pc.setRemoteDescription(RTCSessionDescription(sdp=answer,type='answer'))
 ##########################################
-# os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
-# os.environ['MULTIPROCESSING_METHOD'] = 'forkserver'                                                    
 if __name__ == '__main__':
     mp.set_start_method('spawn')
     parser = argparse.ArgumentParser()
@@ -470,7 +447,6 @@ if __name__ == '__main__':
 
     #musetalk opt
     parser.add_argument('--avatar_id', type=str, default='avator_1', help="define which avatar in data/avatars")
-    #parser.add_argument('--bbox_shift', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=16, help="infer batch")
     parser.add_argument('--audio_gain', type=float, default=1.0, help="Audio gain multiplier to amplify mouth movement (1.0=normal, 1.5=wider, 2.0=very wide)")
 
@@ -480,8 +456,6 @@ if __name__ == '__main__':
     parser.add_argument('--REF_FILE', type=str, default="zh-CN-YunxiaNeural",help="参考文件名或语音模型ID，默认值为 edgetts的语音模型ID zh-CN-YunxiaNeural, 若--tts指定为azuretts, 可以使用Azure语音模型ID, 如zh-CN-XiaoxiaoMultilingualNeural")
     parser.add_argument('--REF_TEXT', type=str, default=None)
     parser.add_argument('--TTS_SERVER', type=str, default='http://127.0.0.1:9880') # http://localhost:9000
-    # parser.add_argument('--CHARACTER', type=str, default='test')
-    # parser.add_argument('--EMOTION', type=str, default='default')
 
     parser.add_argument('--model', type=str, default='musetalk') #musetalk wav2lip ultralight
 
@@ -502,10 +476,6 @@ if __name__ == '__main__':
         with open(opt.customvideo_config,'r') as file:
             opt.customopt = json.load(file)
 
-    # if opt.model == 'ernerf':       
-    #     from nerfreal import NeRFReal,load_model,load_avatar
-    #     model = load_model(opt)
-    #     avatar = load_avatar(opt) 
     if opt.model == 'musetalk':
         from musereal import MuseReal,load_model,load_avatar,warm_up
         logger.info(opt)
@@ -525,11 +495,6 @@ if __name__ == '__main__':
         avatar = load_avatar(opt.avatar_id)
         warm_up(opt.batch_size,avatar,160)
 
-    # if opt.transport=='rtmp':
-    #     thread_quit = Event()
-    #     nerfreals[0] = build_nerfreal(0)
-    #     rendthrd = Thread(target=nerfreals[0].render,args=(thread_quit,))
-    #     rendthrd.start()
     if opt.transport=='virtualcam':
         thread_quit = Event()
         nerfreals[0] = build_nerfreal(0)
@@ -546,7 +511,6 @@ if __name__ == '__main__':
     appasync.router.add_post("/record", record)
     appasync.router.add_post("/interrupt_talk", interrupt_talk)
     appasync.router.add_post("/is_speaking", is_speaking)
-    appasync.router.add_static('/',path='web')
 
     # Configure default CORS settings.
     cors = aiohttp_cors.setup(appasync, defaults={
@@ -554,18 +518,13 @@ if __name__ == '__main__':
                 allow_credentials=True,
                 expose_headers="*",
                 allow_headers="*",
+                allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             )
         })
     # Configure CORS on all routes.
     for route in list(appasync.router.routes()):
         cors.add(route)
 
-    pagename='webrtcapi.html'
-    if opt.transport=='rtmp':
-        pagename='echoapi.html'
-    elif opt.transport=='rtcpush':
-        pagename='rtcpushapi.html'
-    
     # Setup SSL context if certificates are provided
     ssl_context = None
     use_https = False
@@ -583,7 +542,6 @@ if __name__ == '__main__':
                 logger.warning(f'Key file not found: {opt.ssl_key}')
     
     protocol = 'https' if use_https else 'http'
-    logger.info(f'start {protocol} server; {protocol}://<serverip>:'+str(opt.listenport)+'/'+pagename)
     logger.info(f'如果使用webrtc，推荐访问webrtc集成前端: {protocol}://<serverip>:'+str(opt.listenport)+'/dashboard.html')
     if use_https:
         logger.info('HTTPS enabled - microphone access will work from remote connections.')
@@ -593,25 +551,6 @@ if __name__ == '__main__':
     def run_server(runner):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
-        # Suppress aioice STUN transaction retry errors
-        import logging
-        aioice_logger = logging.getLogger('aioice')
-        aioice_logger.setLevel(logging.WARNING)
-        
-        # Set custom exception handler to suppress aioice InvalidStateError
-        def exception_handler(loop, context):
-            exception = context.get('exception')
-            if exception and isinstance(exception, asyncio.InvalidStateError):
-                # Check if it's from aioice STUN transaction
-                message = str(context.get('message', ''))
-                if 'Transaction.__retry' in message or 'aioice' in message.lower():
-                    logger.debug(f"Suppressed aioice STUN transaction retry error: {message}")
-                    return
-            # Call default handler for other exceptions
-            loop.default_exception_handler(context)
-        
-        loop.set_exception_handler(exception_handler)
         
         loop.run_until_complete(runner.setup())
         if use_https and ssl_context:
@@ -625,15 +564,5 @@ if __name__ == '__main__':
                 if k!=0:
                     push_url = opt.push_url+str(k)
                 loop.run_until_complete(run(push_url,k))
-        loop.run_forever()    
-    #Thread(target=run_server, args=(web.AppRunner(appasync),)).start()
+        loop.run_forever()
     run_server(web.AppRunner(appasync))
-
-    #app.on_shutdown.append(on_shutdown)
-    #app.router.add_post("/offer", offer)
-
-    # print('start websocket server')
-    # server = pywsgi.WSGIServer(('0.0.0.0', 8000), app, handler_class=WebSocketHandler)
-    # server.serve_forever()
-    
-    

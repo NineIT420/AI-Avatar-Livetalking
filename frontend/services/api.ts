@@ -90,3 +90,25 @@ export async function sendAudio(audioBlob: Blob, sessionId: number): Promise<Hum
   return response.json();
 }
 
+/**
+ * Streams audio chunk to server for real-time inference
+ */
+export async function streamAudioChunk(audioBlob: Blob, sessionId: number, chunkIndex: number): Promise<HumanAudioResponse> {
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'chunk.wav');
+  formData.append('sessionid', sessionId.toString());
+  formData.append('chunk_index', chunkIndex.toString());
+
+  const response = await fetch(`${API_V1_BASE}/humanaudio`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ msg: response.statusText }));
+    throw new Error(error.msg || `Failed to stream audio chunk: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+

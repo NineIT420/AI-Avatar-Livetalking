@@ -38,7 +38,6 @@ from av import AudioFrame, VideoFrame
 import av
 from fractions import Fraction
 
-from ttsreal import EdgeTTS,SovitsTTS,XTTS,CosyVoiceTTS,FishTTS,TencentTTS,DoubaoTTS,IndexTTS2,AzureTTS
 from logger import logger
 
 from tqdm import tqdm
@@ -73,25 +72,6 @@ class BaseReal:
         self.sample_rate = 16000
         self.chunk = self.sample_rate // opt.fps # 320 samples per chunk (20ms * 16000 / 1000)
         self.sessionid = self.opt.sessionid
-
-        if opt.tts == "edgetts":
-            self.tts = EdgeTTS(opt,self)
-        elif opt.tts == "gpt-sovits":
-            self.tts = SovitsTTS(opt,self)
-        elif opt.tts == "xtts":
-            self.tts = XTTS(opt,self)
-        elif opt.tts == "cosyvoice":
-            self.tts = CosyVoiceTTS(opt,self)
-        elif opt.tts == "fishtts":
-            self.tts = FishTTS(opt,self)
-        elif opt.tts == "tencent":
-            self.tts = TencentTTS(opt,self)
-        elif opt.tts == "doubao":
-            self.tts = DoubaoTTS(opt,self)
-        elif opt.tts == "indextts2":
-            self.tts = IndexTTS2(opt,self)
-        elif opt.tts == "azuretts":
-            self.tts = AzureTTS(opt,self)
 
         self.speaking = False
 
@@ -135,7 +115,7 @@ class BaseReal:
     def put_audio_frame(self,audio_chunk,datainfo:dict={}): #16khz 20ms pcm
         self.asr.put_audio_frame(audio_chunk,datainfo)
 
-    def put_audio_file(self,filebyte,datainfo:dict={}): 
+    def put_audio_file(self,filebyte,datainfo:dict={}):
         input_stream = BytesIO(filebyte)
         stream = self.__create_bytes_stream(input_stream)
         streamlen = stream.shape[0]
@@ -144,6 +124,23 @@ class BaseReal:
             self.put_audio_frame(stream[idx:idx+self.chunk],datainfo)
             streamlen -= self.chunk
             idx += self.chunk
+
+    def put_audio_chunk(self,filebyte,chunk_index:int,datainfo:dict={}):
+        """Handle streaming audio chunks from frontend (typically 100ms chunks)"""
+        try:
+            input_stream = BytesIO(filebyte)
+            stream = self.__create_bytes_stream(input_stream)
+            streamlen = stream.shape[0]
+            idx=0
+            # Process the chunk in standard 20ms frames (self.chunk size)
+            while streamlen >= self.chunk:
+                self.put_audio_frame(stream[idx:idx+self.chunk],datainfo)
+                streamlen -= self.chunk
+                idx += self.chunk
+        except Exception as e:
+            logger.warning(f'Failed to decode streaming audio chunk {chunk_index}: {e}. Skipping chunk.')
+            # For compressed formats that can't be decoded, we skip the chunk
+            # The ASR system will handle missing chunks gracefully
     
     def __create_bytes_stream(self,byte_stream):
         #byte_stream=BytesIO(buffer)

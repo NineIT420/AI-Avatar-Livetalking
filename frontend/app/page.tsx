@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useRecording } from '@/hooks/useRecording';
 import { VideoPlayer } from '@/components/VideoPlayer';
@@ -11,9 +11,33 @@ export default function Home() {
   const { peerConnection, isConnected, connectionStatus, latency, sessionId, start, stop, videoRef, audioRef } = useWebRTC();
   const { isRecording, startRecord, stopRecord, error: recordingError } = useRecording();
 
+  // Automatically start/stop recording when sessionId changes
+  useEffect(() => {
+    const manageRecording = async () => {
+      if (sessionId !== null && !isRecording) {
+        // Start recording when sessionId becomes available
+        try {
+          await startRecord(sessionId);
+        } catch (error) {
+          console.error('Failed to start recording:', error);
+        }
+      } else if (sessionId === null && isRecording) {
+        // Stop recording when sessionId becomes null
+        try {
+          await stopRecord(sessionId!);
+        } catch (error) {
+          console.error('Failed to stop recording:', error);
+        }
+      }
+    };
+
+    manageRecording();
+  }, [sessionId, isRecording, startRecord, stopRecord]);
+
   const handleStart = async () => {
     try {
       await start(true); // STUN server enabled
+      // Recording will start automatically when sessionId becomes available
     } catch (error) {
       console.error('Failed to start WebRTC:', error);
       alert('Failed to start connection. Please check your browser permissions and try again.');
@@ -22,21 +46,9 @@ export default function Home() {
 
   const handleStop = () => {
     stop();
+    // Recording will stop automatically when connection stops
   };
 
-  const handleToggleRecord = async () => {
-    if (sessionId !== null) {
-      try {
-        if (isRecording) {
-          await stopRecord(sessionId);
-        } else {
-          await startRecord(sessionId);
-        }
-      } catch (error) {
-        console.error(`Failed to ${isRecording ? 'stop' : 'start'} recording:`, error);
-      }
-    }
-  };
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50">
@@ -58,10 +70,8 @@ export default function Home() {
             <h2 className="text-xl font-semibold text-slate-800 mb-6">Connection Controls</h2>
             <Controls
               isConnected={isConnected}
-              isRecording={isRecording}
               onStart={handleStart}
               onStop={handleStop}
-              onToggleRecord={handleToggleRecord}
               error={recordingError}
             />
           </div>

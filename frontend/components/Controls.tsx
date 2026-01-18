@@ -4,19 +4,15 @@ import React from 'react';
 
 interface ControlsProps {
   isConnected: boolean;
-  isRecording: boolean;
   onStart: () => void;
   onStop: () => void;
-  onToggleRecord: () => void;
   error?: string | null;
 }
 
 export function Controls({
   isConnected,
-  isRecording,
   onStart,
   onStop,
-  onToggleRecord,
   error,
 }: ControlsProps) {
   return (
@@ -32,7 +28,7 @@ export function Controls({
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="flex justify-center">
         {!isConnected ? (
           <button
             onClick={onStart}
@@ -61,37 +57,6 @@ export function Controls({
             </div>
           </button>
         )}
-
-        <button
-          onClick={onToggleRecord}
-          disabled={!isConnected}
-          className={`group relative overflow-hidden text-white font-semibold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:hover:shadow-lg ${
-            isRecording
-              ? 'bg-gradient-to-r from-amber-500 to-orange-600 focus:ring-amber-500'
-              : 'bg-gradient-to-r from-emerald-500 to-green-600 focus:ring-emerald-500'
-          }`}
-        >
-          <div
-            className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 disabled:opacity-0 ${
-              isRecording
-                ? 'bg-gradient-to-r from-amber-600 to-orange-700'
-                : 'bg-gradient-to-r from-emerald-600 to-green-700'
-            }`}
-          />
-          <div className="relative flex items-center justify-center gap-2">
-            {isRecording && (
-              <span className="absolute top-2 right-2 w-2 h-2 bg-white rounded-full animate-pulse" />
-            )}
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              {isRecording ? (
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-              ) : (
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-              )}
-            </svg>
-            <span>{isRecording ? 'Stop Recording' : 'Start Recording'}</span>
-          </div>
-        </button>
       </div>
     </div>
   );
