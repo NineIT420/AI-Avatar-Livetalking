@@ -2,13 +2,12 @@ import type { OfferResponse, RecordRequest, HumanAudioResponse } from '@/types';
 
 
 const API_BASE_URL = 'https://52.3.240.147:8010';
-const API_V1_BASE = API_BASE_URL.endsWith('/') ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
 
 /**
  * Sends WebRTC offer to server and gets answer
  */
 export async function sendOffer(offer: RTCSessionDescriptionInit, useStun: boolean): Promise<OfferResponse> {
-  const response = await fetch(`${API_V1_BASE}/offer`, {
+  const response = await fetch(`${API_BASE_URL}/offer`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -31,7 +30,7 @@ export async function sendOffer(offer: RTCSessionDescriptionInit, useStun: boole
  * Starts server-side recording
  */
 export async function startRecording(sessionId: number): Promise<void> {
-  const response = await fetch(`${API_V1_BASE}/record`, {
+  const response = await fetch(`${API_BASE_URL}/record`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -52,7 +51,7 @@ export async function startRecording(sessionId: number): Promise<void> {
  * Stops server-side recording
  */
 export async function stopRecording(sessionId: number): Promise<void> {
-  const response = await fetch(`${API_V1_BASE}/record`, {
+  const response = await fetch(`${API_BASE_URL}/record`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -77,7 +76,7 @@ export async function sendAudio(audioBlob: Blob, sessionId: number): Promise<Hum
   formData.append('file', audioBlob, 'recording.wav');
   formData.append('sessionid', sessionId.toString());
 
-  const response = await fetch(`${API_V1_BASE}/humanaudio`, {
+  const response = await fetch(`${API_BASE_URL}/humanaudio`, {
     method: 'POST',
     body: formData,
   });
@@ -99,7 +98,7 @@ export async function streamAudioChunk(audioBlob: Blob, sessionId: number, chunk
   formData.append('sessionid', sessionId.toString());
   formData.append('chunk_index', chunkIndex.toString());
 
-  const response = await fetch(`${API_V1_BASE}/humanaudio`, {
+  const response = await fetch(`${API_BASE_URL}/humanaudio`, {
     method: 'POST',
     body: formData,
   });

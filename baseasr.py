@@ -50,7 +50,7 @@ class BaseASR:
         # Voice activity detection state
         self.vad_state = False  # Current VAD state
         self.vad_hysteresis_counter = 0  # Counter for hysteresis
-        self.vad_hysteresis_threshold = 3  # Frames to confirm state change
+        self.vad_hysteresis_threshold = 1  # Frames to confirm state change (reduced from 3 to be more responsive)
 
         #self.warm_up()
 
@@ -107,16 +107,16 @@ class BaseASR:
         # - Low formant energy relative to total
 
         speech_criteria = [
-            speech_ratio > 0.4,  # Sufficient energy in speech bands
-            spectral_centroid > 800,  # Higher frequency content than breathing
-            zero_crossings > 0.08,  # More amplitude changes than breathing
-            formant_energy / total_energy > 0.15  # Formant energy present
+            speech_ratio > 0.3,  # Sufficient energy in speech bands (relaxed from 0.4)
+            spectral_centroid > 600,  # Higher frequency content than breathing (relaxed from 800)
+            zero_crossings > 0.05,  # More amplitude changes than breathing (relaxed from 0.08)
+            formant_energy / total_energy > 0.10  # Formant energy present (relaxed from 0.15)
         ]
 
-        # Require at least 3 out of 4 criteria for speech detection
+        # Require at least 2 out of 4 criteria for speech detection (relaxed from 3)
         speech_score = sum(speech_criteria)
 
-        return speech_score >= 3
+        return speech_score >= 2
 
     #return frame:audio pcm; type: 0-normal speak, 1-silence; eventpoint:custom event sync with audio
     def get_audio_frame(self):
@@ -151,7 +151,8 @@ class BaseASR:
                 type = 0  # Human speech detected
             else:
                 type = 1  # Silence, breathing, or background noise
-            #print(f'[INFO] get frame {frame.shape}')
+            # Debug logging for VAD state changes
+            #print(f'[VAD] RMS: {rms:.4f}, State: {self.vad_state}, Counter: {self.vad_hysteresis_counter}, Type: {type}')
         except queue.Empty:
             if self.parent and self.parent.curr_state>1: #播放自定义音频
                 frame = self.parent.get_audio_stream(self.parent.curr_state)

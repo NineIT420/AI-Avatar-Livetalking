@@ -41,13 +41,7 @@ class MuseASR(BaseASR):
             return
         
         inputs = np.concatenate(self.frames) # [N * chunk]
-        # Apply additional gain to enhance mouth movement detection
-        if hasattr(self, 'audio_gain') and self.audio_gain != 1.0:
-            inputs = inputs * self.audio_gain
-            # Normalize to prevent clipping
-            max_val = np.abs(inputs).max()
-            if max_val > 1.0:
-                inputs = inputs / max_val
+        # Audio gain is already applied in BaseASR.get_audio_frame()
         whisper_feature = self.audio_processor.audio2feat(inputs)
         # for feature in whisper_feature:
         #     self.audio_feats.append(feature)        
