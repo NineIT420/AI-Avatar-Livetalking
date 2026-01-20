@@ -1,21 +1,15 @@
 import { useState, useRef, useCallback } from 'react';
-import { startRecording, stopRecording, sendAudio } from '@/services/api';
-import { convertToWav, getSupportedMimeType } from '@/utils/audioConverter';
-
-interface UseRecordingReturn {
-  isRecording: boolean;
-  startRecord: (sessionId: number) => Promise<void>;
-  stopRecord: (sessionId: number) => Promise<void>;
-  error: string | null;
-}
+import { startRecording, stopRecording, streamAudioChunk } from '@/services/api';
+import { config } from '@/utils/config';
+import type { UseRecordingReturn } from '@/types';
 
 export function useRecording(): UseRecordingReturn {
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const mimeTypeRef = useRef<string>('audio/webm');
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
+  const chunkIndexRef = useRef<number>(0);
 
   const startRecord = useCallback(async (sessionId: number) => {
     try {
@@ -24,27 +18,83 @@ export function useRecording(): UseRecordingReturn {
       // Start server-side recording
       await startRecording(sessionId);
 
-      // Start microphone audio recording
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioStreamRef.current = stream;
-      audioChunksRef.current = [];
+      // Start microphone audio recording with Web Audio API
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: config.audio.sampleRate,
+          channelCount: config.audio.channelCount,
+          echoCancellation: config.audio.echoCancellation,
+          noiseSuppression: config.audio.noiseSuppression
+        }
+      });
+      mediaStreamRef.current = stream;
+      chunkIndexRef.current = 0;
 
-      // Detect supported audio format
-      mimeTypeRef.current = getSupportedMimeType();
-
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: mimeTypeRef.current,
+      // Create AudioContext
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: config.audio.sampleRate
       });
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
+      // Create source and AudioWorklet processor
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+
+      // Load and create AudioWorkletNode
+      await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
+      const workletNode = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
+
+      workletNode.port.onmessage = async (event) => {
+        if (event.data.type === 'audioData') {
+          const inputData = event.data.data;
+
+          try {
+            // Convert Float32Array to Int16Array (16-bit PCM)
+            const pcmData = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+            }
+
+            // Create WAV blob from PCM data
+            const wavBlob = createWavBlob(pcmData, config.audio.sampleRate);
+
+            // Stream audio chunk to server for real-time inference
+            const response = await streamAudioChunk(wavBlob, sessionId, chunkIndexRef.current);
+            if (response.code === 0) {
+              // Audio chunk streamed successfully - silent success for performance
+            } else {
+              console.error(`Failed to stream audio chunk ${chunkIndexRef.current}:`, response.msg);
+              // If session not found, stop recording automatically
+              if (response.msg && response.msg.includes('Session') && response.msg.includes('not found')) {
+                console.warn('Session not found on server, stopping recording');
+                // Stop the recording and audio processing
+                if (workletNodeRef.current) {
+                  workletNodeRef.current.disconnect();
+                  workletNodeRef.current = null;
+                }
+                if (audioContextRef.current) {
+                  await audioContextRef.current.close();
+                  audioContextRef.current = null;
+                }
+                if (mediaStreamRef.current) {
+                  mediaStreamRef.current.getTracks().forEach(track => track.stop());
+                  mediaStreamRef.current = null;
+                }
+                setIsRecording(false);
+                chunkIndexRef.current = 0;
+                return; // Exit the processor function
+              }
+            }
+            chunkIndexRef.current++;
+          } catch (err) {
+            console.error('Error processing audio chunk:', err);
+          }
         }
       };
 
-      // Request data every 100ms to ensure timely collection
-      mediaRecorder.start(100);
-      mediaRecorderRef.current = mediaRecorder;
+      // Connect the nodes
+      source.connect(workletNode);
+      workletNode.connect(audioContextRef.current.destination);
+
+      workletNodeRef.current = workletNode;
       setIsRecording(true);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to start recording';
@@ -62,45 +112,21 @@ export function useRecording(): UseRecordingReturn {
         // Stop server-side recording
         await stopRecording(sessionId);
 
-        // Stop microphone audio recording
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-          mediaRecorderRef.current.stop();
+        // Disconnect and clean up Web Audio API
+        if (workletNodeRef.current) {
+          workletNodeRef.current.disconnect();
+          workletNodeRef.current = null;
+        }
 
-          // Set stop handler to send audio when recording stops
-          mediaRecorderRef.current.onstop = async () => {
-            // Combine audio chunks into Blob
-            const audioBlob = new Blob(audioChunksRef.current, {
-              type: mimeTypeRef.current,
-            });
-
-            try {
-              // Convert to WAV format
-              const wavBlob = await convertToWav(audioBlob);
-
-              // Send audio to server
-              if (wavBlob.size > 0) {
-                const response = await sendAudio(wavBlob, sessionId);
-                if (response.code === 0) {
-                  console.log('Audio sent successfully to /humanaudio');
-                } else {
-                  console.error('Failed to send audio:', response.msg);
-                  setError(response.msg || 'Failed to send audio');
-                }
-              }
-            } catch (err) {
-              console.error('Error converting/sending audio:', err);
-              setError('Error processing audio');
-            } finally {
-              // Clear audio chunks
-              audioChunksRef.current = [];
-            }
-          };
+        if (audioContextRef.current) {
+          await audioContextRef.current.close();
+          audioContextRef.current = null;
         }
 
         // Stop all audio tracks
-        if (audioStreamRef.current) {
-          audioStreamRef.current.getTracks().forEach((track) => track.stop());
-          audioStreamRef.current = null;
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
         }
 
         setIsRecording(false);
@@ -120,5 +146,40 @@ export function useRecording(): UseRecordingReturn {
     stopRecord,
     error,
   };
+}
+
+/**
+ * Creates a WAV blob from PCM data
+ */
+function createWavBlob(pcmData: Int16Array, sampleRate: number): Blob {
+  const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+  const view = new DataView(buffer);
+
+  // WAV header
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + pcmData.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, pcmData.length * 2, true);
+
+  // PCM data
+  const pcmView = new Int16Array(buffer, 44);
+  pcmView.set(pcmData);
+
+  return new Blob([buffer], { type: 'audio/wav' });
 }
 

@@ -6,11 +6,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://52.3.240.147:8010/api/:path*', // FastAPI backend
-      },
-      {
-        source: '/backend/:path*',
-        destination: 'https://52.3.240.147:8010/:path*', // Proxy all backend routes to avoid CORS
+        destination: `${process.env.NEXT_PUBLIC_API_BASE_URL || 'https://52.3.240.147:8010'}/:path*`, // FastAPI backend - proxy all requests
       },
     ];
   },

@@ -1,20 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { sendOffer } from '@/services/api';
-import type { OfferResponse } from '@/types';
-
-type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'failed';
-
-interface UseWebRTCReturn {
-  peerConnection: RTCPeerConnection | null;
-  isConnected: boolean;
-  connectionStatus: ConnectionStatus;
-  latency: number | null;
-  sessionId: number | null;
-  start: (useStun: boolean) => Promise<void>;
-  stop: () => void;
-  videoRef: React.RefObject<HTMLVideoElement>;
-  audioRef: React.RefObject<HTMLAudioElement>;
-}
+import { config } from '@/utils/config';
+import type { OfferResponse, ConnectionStatus, UseWebRTCReturn } from '@/types';
 
 export function useWebRTC(): UseWebRTCReturn {
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
@@ -26,23 +13,28 @@ export function useWebRTC(): UseWebRTCReturn {
   const audioRef = useRef<HTMLAudioElement>(null);
   const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Function to measure latency using WebRTC stats
+  // Function to measure latency using WebRTC stats with performance optimizations
   const measureLatency = useCallback(async (pc: RTCPeerConnection) => {
+    // Early return if connection is not in a good state
+    if (pc.connectionState !== 'connected' || (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed')) {
+      return;
+    }
+
     try {
       const stats = await pc.getStats();
       let minRtt = Infinity;
       let foundRtt = false;
 
-      // Iterate through all stats reports
+      // Iterate through all stats reports with early optimization
       for (const [id, report] of stats.entries()) {
-        // Check candidate-pair stats (most reliable for RTT)
+        // Only check relevant stat types
         if (report.type === 'candidate-pair') {
           const candidatePair = report as any;
           // Check if the candidate pair is active/succeeded
           if (candidatePair.state === 'succeeded' || candidatePair.state === 'in-progress') {
             // Access RTT properties - they might be in different formats
             let rtt: number | null = null;
-            
+
             // Try different property names (browser-dependent)
             if ('currentRoundTripTime' in candidatePair && candidatePair.currentRoundTripTime) {
               rtt = candidatePair.currentRoundTripTime;
@@ -51,16 +43,15 @@ export function useWebRTC(): UseWebRTCReturn {
             } else if ('roundTripTime' in candidatePair && candidatePair.roundTripTime) {
               rtt = candidatePair.roundTripTime;
             }
-            
+
             if (rtt !== null && rtt > 0 && rtt < minRtt) {
               minRtt = rtt;
               foundRtt = true;
             }
           }
         }
-        
-        // Check transport stats
-        if (report.type === 'transport') {
+        // Check transport stats as fallback
+        else if (report.type === 'transport' && !foundRtt) {
           const transport = report as any;
           if ('currentRoundTripTime' in transport && transport.currentRoundTripTime) {
             const rtt = transport.currentRoundTripTime;
@@ -70,9 +61,8 @@ export function useWebRTC(): UseWebRTCReturn {
             }
           }
         }
-        
-        // Check inbound-rtp stats (some browsers report RTT here)
-        if (report.type === 'inbound-rtp') {
+        // Check inbound-rtp stats as last resort
+        else if (report.type === 'inbound-rtp' && !foundRtt) {
           const inboundRtp = report as any;
           if ('roundTripTime' in inboundRtp && inboundRtp.roundTripTime) {
             const rtt = inboundRtp.roundTripTime;
@@ -82,65 +72,68 @@ export function useWebRTC(): UseWebRTCReturn {
             }
           }
         }
+
+        // Early exit if we found RTT and it's reasonable
+        if (foundRtt && minRtt !== Infinity && minRtt > 0 && minRtt < 1) {
+          break;
+        }
       }
 
       // If we found a valid RTT, update latency
       if (foundRtt && minRtt !== Infinity && minRtt > 0) {
         // RTT from stats is in seconds, convert to milliseconds
         const latencyMs = Math.round(minRtt * 1000);
-        setLatency(latencyMs);
+        // Only update if latency changed significantly (prevent unnecessary re-renders)
+        setLatency(prevLatency => {
+          if (prevLatency === null || Math.abs(prevLatency - latencyMs) > 5) {
+            return latencyMs;
+          }
+          return prevLatency;
+        });
       }
-      // Note: RTT may not be available immediately or in all browsers
-      // It typically becomes available after media starts flowing
     } catch (error) {
-      console.error('Error measuring latency:', error);
+      // Silent error handling for performance - don't log on every measurement failure
+      console.warn('Latency measurement failed:', error);
     }
   }, []);
 
-  const start = useCallback(async (useStun: boolean) => {
-    setConnectionStatus('connecting');
-    setLatency(null);
-
-    const config: RTCConfiguration = {};
+  // Helper function to create WebRTC configuration
+  const createRTCConfig = useCallback((useStun: boolean): RTCConfiguration => {
+    const rtcConfig: RTCConfiguration = {};
 
     if (useStun) {
-      config.iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
+      rtcConfig.iceServers = [
+        { urls: config.webrtc.stunServers },
+        config.webrtc.turnServer
+      ];
     }
 
-    const pc = new RTCPeerConnection(config);
+    return rtcConfig;
+  }, []);
 
-    // Track connection state changes
-    pc.addEventListener('connectionstatechange', () => {
+  // Helper function to setup connection state listeners
+  const setupConnectionListeners = useCallback((pc: RTCPeerConnection) => {
+    const handleConnectionStateChange = () => {
       const state = pc.connectionState;
-      if (state === 'connected') {
-        setConnectionStatus('connected');
-        setIsConnected(true);
-      } else if (state === 'connecting') {
-        setConnectionStatus('connecting');
-      } else if (state === 'disconnected' || state === 'closed') {
-        setConnectionStatus('disconnected');
-        setIsConnected(false);
-      } else if (state === 'failed') {
-        setConnectionStatus('failed');
-        setIsConnected(false);
-      }
-    });
+      updateConnectionState(state);
+    };
 
-    // Track ICE connection state
-    pc.addEventListener('iceconnectionstatechange', () => {
+    const handleIceConnectionStateChange = () => {
       const iceState = pc.iceConnectionState;
-      if (iceState === 'connected' || iceState === 'completed') {
-        setConnectionStatus('connected');
-        setIsConnected(true);
-      } else if (iceState === 'checking') {
-        setConnectionStatus('connecting');
-      } else if (iceState === 'disconnected' || iceState === 'closed' || iceState === 'failed') {
-        setConnectionStatus(iceState === 'failed' ? 'failed' : 'disconnected');
-        setIsConnected(false);
-      }
-    });
+      updateIceConnectionState(iceState);
+    };
 
-    // Handle incoming tracks
+    pc.addEventListener('connectionstatechange', handleConnectionStateChange);
+    pc.addEventListener('iceconnectionstatechange', handleIceConnectionStateChange);
+
+    return () => {
+      pc.removeEventListener('connectionstatechange', handleConnectionStateChange);
+      pc.removeEventListener('iceconnectionstatechange', handleIceConnectionStateChange);
+    };
+  }, []);
+
+  // Helper function to setup track listeners
+  const setupTrackListeners = useCallback((pc: RTCPeerConnection) => {
     pc.addEventListener('track', (evt) => {
       if (evt.track.kind === 'video' && videoRef.current) {
         videoRef.current.srcObject = evt.streams[0];
@@ -148,30 +141,121 @@ export function useWebRTC(): UseWebRTCReturn {
         audioRef.current.srcObject = evt.streams[0];
       }
     });
+  }, []);
+
+  // Helper function to update connection state
+  const updateConnectionState = useCallback((state: RTCPeerConnectionState) => {
+    switch (state) {
+      case 'connected':
+        setConnectionStatus('connected');
+        setIsConnected(true);
+        break;
+      case 'connecting':
+        setConnectionStatus('connecting');
+        break;
+      case 'disconnected':
+      case 'closed':
+        setConnectionStatus('disconnected');
+        setIsConnected(false);
+        setSessionId(null);
+        break;
+      case 'failed':
+        setConnectionStatus('failed');
+        setIsConnected(false);
+        setSessionId(null);
+        break;
+    }
+  }, []);
+
+  // Helper function to update ICE connection state
+  const updateIceConnectionState = useCallback((iceState: RTCIceConnectionState) => {
+    switch (iceState) {
+      case 'connected':
+      case 'completed':
+        setConnectionStatus('connected');
+        setIsConnected(true);
+        break;
+      case 'checking':
+        setConnectionStatus('connecting');
+        break;
+      case 'disconnected':
+      case 'closed':
+      case 'failed':
+        setConnectionStatus(iceState === 'failed' ? 'failed' : 'disconnected');
+        setIsConnected(false);
+        if (iceState === 'failed' || iceState === 'disconnected' || iceState === 'closed') {
+          setSessionId(null);
+        }
+        break;
+    }
+  }, []);
+
+  // Helper function to setup latency measurement
+  const setupLatencyMeasurement = useCallback((pc: RTCPeerConnection) => {
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+    }
+
+    let measurementCount = 0;
+    const maxMeasurements = 10;
+
+    const startMeasuring = () => {
+      statsIntervalRef.current = setInterval(() => {
+        if (measurementCount >= maxMeasurements) {
+          clearInterval(statsIntervalRef.current!);
+          statsIntervalRef.current = setInterval(() => {
+            if (isConnectionActive(pc)) {
+              measureLatency(pc);
+            }
+          }, 5000);
+          return;
+        }
+
+        if (isConnectionActive(pc)) {
+          measureLatency(pc);
+          measurementCount++;
+        }
+      }, 2000);
+    };
+
+    const checkConnection = () => {
+      if (isConnectionActive(pc)) {
+        startMeasuring();
+        setTimeout(() => measureLatency(pc), 300);
+      } else {
+        setTimeout(checkConnection, 300);
+      }
+    };
+
+    setTimeout(checkConnection, 500);
+  }, [measureLatency]);
+
+  // Helper function to check if connection is active
+  const isConnectionActive = useCallback((pc: RTCPeerConnection): boolean => {
+    return pc.connectionState === 'connected' &&
+           (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed');
+  }, []);
+
+  // Main start function - now much cleaner and focused
+  const start = useCallback(async (useStun: boolean) => {
+    setConnectionStatus('connecting');
+    setLatency(null);
+
+    const rtcConfig = createRTCConfig(useStun);
+    const pc = new RTCPeerConnection(rtcConfig);
+
+    // Setup all listeners
+    const cleanupListeners = setupConnectionListeners(pc);
+    setupTrackListeners(pc);
 
     // Add transceivers
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
 
-    // Create and send offer
     try {
+      // Create and exchange offer/answer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
-      // Wait for ICE gathering to complete
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-        } else {
-          const checkState = () => {
-            if (pc.iceGatheringState === 'complete') {
-              pc.removeEventListener('icegatheringstatechange', checkState);
-              resolve();
-            }
-          };
-          pc.addEventListener('icegatheringstatechange', checkState);
-        }
-      });
 
       const answer: OfferResponse = await sendOffer(pc.localDescription!, useStun);
       setSessionId(answer.sessionid);
@@ -181,42 +265,14 @@ export function useWebRTC(): UseWebRTCReturn {
       });
 
       setPeerConnection(pc);
-
-      // Start measuring latency periodically
-      if (statsIntervalRef.current) {
-        clearInterval(statsIntervalRef.current);
-      }
-      
-      // Wait a bit for connection to fully establish before measuring
-      const startMeasuring = () => {
-        statsIntervalRef.current = setInterval(() => {
-          if (pc.connectionState === 'connected' && pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-            measureLatency(pc);
-          }
-        }, 1000); // Measure every second
-      };
-      
-      // Start measuring after connection is established
-      const checkConnection = () => {
-        if (pc.connectionState === 'connected' && (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed')) {
-          startMeasuring();
-          // Initial measurement after a short delay
-          setTimeout(() => measureLatency(pc), 500);
-        } else {
-          // Check again in 500ms
-          setTimeout(checkConnection, 500);
-        }
-      };
-      
-      // Start checking after a short delay
-      setTimeout(checkConnection, 1000);
+      setupLatencyMeasurement(pc);
     } catch (error) {
       console.error('Error starting WebRTC:', error);
       setConnectionStatus('failed');
       pc.close();
       throw error;
     }
-  }, [measureLatency]);
+  }, [createRTCConfig, setupConnectionListeners, setupTrackListeners, setupLatencyMeasurement]);
 
   const stop = useCallback(() => {
     if (statsIntervalRef.current) {

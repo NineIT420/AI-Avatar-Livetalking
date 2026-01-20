@@ -1,16 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { memo } from 'react';
+import type { ConnectionStatus, StatusDisplayProps } from '@/types';
 
-type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'failed';
-
-interface StatusDisplayProps {
-  status: ConnectionStatus;
-  latency: number | null;
-}
-
-export function StatusDisplay({ status, latency }: StatusDisplayProps) {
-  const getStatusConfig = (status: ConnectionStatus) => {
+const StatusDisplay = memo(function StatusDisplay({ status, latency }: StatusDisplayProps) {
+  const getStatusConfig = React.useCallback((status: ConnectionStatus) => {
     switch (status) {
       case 'connected':
         return {
@@ -46,7 +40,7 @@ export function StatusDisplay({ status, latency }: StatusDisplayProps) {
           pulse: false,
         };
     }
-  };
+  }, []);
 
   const config = getStatusConfig(status);
 
@@ -86,5 +80,9 @@ export function StatusDisplay({ status, latency }: StatusDisplayProps) {
       </div>
     </div>
   );
-}
+});
+
+StatusDisplay.displayName = 'StatusDisplay';
+
+export { StatusDisplay };
 

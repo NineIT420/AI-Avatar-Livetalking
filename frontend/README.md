@@ -28,13 +28,25 @@ yarn install
 
 ### Configuration
 
-Set the API base URL in `.env.local`:
+Create a `.env.local` file in the frontend directory with the following environment variables:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
+# API Configuration
+NEXT_PUBLIC_API_BASE_URL=https://52.3.240.147:8010
+
+# WebRTC Configuration
+NEXT_PUBLIC_TURN_SERVER_URL=turn:turn.anyfirewall.com:443?transport=tcp
+NEXT_PUBLIC_TURN_USERNAME=webrtc
+NEXT_PUBLIC_TURN_CREDENTIAL=webrtc
+
+# Audio Configuration
+NEXT_PUBLIC_AUDIO_SAMPLE_RATE=16000
+NEXT_PUBLIC_AUDIO_CHANNEL_COUNT=1
+NEXT_PUBLIC_AUDIO_ECHO_CANCELLATION=true
+NEXT_PUBLIC_AUDIO_NOISE_SUPPRESSION=true
 ```
 
-Or update `next.config.js` to use rewrites (already configured for localhost:8000).
+See `.env.local.example` for a complete example.
 
 ### Development
 
@@ -72,7 +84,7 @@ frontend/
 ├── types/            # TypeScript types
 │   └── index.ts
 └── utils/            # Utility functions
-    └── audioConverter.ts
+    └── config.ts
 ```
 
 ## Architecture
@@ -93,7 +105,7 @@ frontend/
 
 ### Utils
 
-- **audioConverter.ts**: Converts audio blobs to WAV format
+- **config.ts**: Centralized configuration management with environment variables
 
 ## API Endpoints
 

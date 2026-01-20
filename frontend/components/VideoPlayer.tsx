@@ -1,13 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
+import type { VideoPlayerProps } from '@/types';
 
-interface VideoPlayerProps {
-  videoRef: React.RefObject<HTMLVideoElement>;
-  audioRef: React.RefObject<HTMLAudioElement>;
-}
-
-export function VideoPlayer({ videoRef, audioRef }: VideoPlayerProps) {
+const VideoPlayer = memo(function VideoPlayer({ videoRef, audioRef }: VideoPlayerProps) {
   const [hasVideo, setHasVideo] = useState(false);
 
   useEffect(() => {
@@ -66,5 +62,9 @@ export function VideoPlayer({ videoRef, audioRef }: VideoPlayerProps) {
       <audio ref={audioRef} autoPlay />
     </div>
   );
-}
+});
+
+VideoPlayer.displayName = 'VideoPlayer';
+
+export { VideoPlayer };
 
