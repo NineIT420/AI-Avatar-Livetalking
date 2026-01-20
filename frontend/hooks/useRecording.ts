@@ -66,6 +66,28 @@ export function useRecording(): UseRecordingReturn {
             console.log(`Audio chunk ${chunkIndexRef.current} streamed successfully`);
           } else {
             console.error(`Failed to stream audio chunk ${chunkIndexRef.current}:`, response.msg);
+            // If session not found, stop recording automatically
+            if (response.msg && response.msg.includes('Session') && response.msg.includes('not found')) {
+              console.warn('Session not found on server, stopping recording');
+              // setError('Connection lost - session ended on server');
+              // Stop the recording and audio processing
+              if (processorRef.current) {
+                processorRef.current.disconnect();
+                processorRef.current = null;
+              }
+              if (audioContextRef.current) {
+                await audioContextRef.current.close();
+                audioContextRef.current = null;
+              }
+              if (mediaStreamRef.current) {
+                mediaStreamRef.current.getTracks().forEach(track => track.stop());
+                mediaStreamRef.current = null;
+              }
+              setIsRecording(false);
+              chunkIndexRef.current = 0;
+              audioChunksRef.current = [];
+              return; // Exit the processor function
+            }
           }
           chunkIndexRef.current++;
         } catch (err) {

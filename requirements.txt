@@ -32,7 +32,9 @@ flask
 flask_sockets
 opencv-python-headless
 aiortc
-aiohttp_cors
+fastapi
+uvicorn[standard]
+python-multipart
 
 ffmpeg-python
 omegaconf
@@ -44,3 +46,4 @@ openai
 websockets==12.0
 gradio_client
 azure-cognitiveservices-speech
+python-dotenv

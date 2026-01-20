@@ -103,16 +103,26 @@ export function useWebRTC(): UseWebRTCReturn {
 
     const config: RTCConfiguration = {};
 
-    // Use TURN server (relays traffic, works even with strict firewalls)
+    // Use comprehensive ICE servers for faster and more reliable connections
     if (useStun) {
-      config.iceServers = [{ 
-        urls: [
-          'stun:stun.l.google.com:19302', 
-          'stun:stun1.l.google.com:19302',
-          'stun:stun2.l.google.com:19302', 
-          'stun:stun3.l.google.com:19302', 
-          'stun:stun4.l.google.com:19302',
-      ] }];
+      config.iceServers = [
+        // Multiple STUN servers for redundancy and faster discovery
+        {
+          urls: [
+            'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302',
+            'stun:stun2.l.google.com:19302',
+            'stun:stun3.l.google.com:19302',
+            'stun:stun4.l.google.com:19302',
+          ]
+        },
+        // TURN servers for NAT traversal (replace with your own TURN server)
+        {
+          urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
+          username: 'webrtc',
+          credential: 'webrtc'
+        }
+      ];
     }
 
     const pc = new RTCPeerConnection(config);
@@ -128,9 +138,13 @@ export function useWebRTC(): UseWebRTCReturn {
       } else if (state === 'disconnected' || state === 'closed') {
         setConnectionStatus('disconnected');
         setIsConnected(false);
+        // Clear sessionId when connection is lost to stop recording
+        setSessionId(null);
       } else if (state === 'failed') {
         setConnectionStatus('failed');
         setIsConnected(false);
+        // Clear sessionId when connection fails to stop recording
+        setSessionId(null);
       }
     });
 
@@ -145,6 +159,10 @@ export function useWebRTC(): UseWebRTCReturn {
       } else if (iceState === 'disconnected' || iceState === 'closed' || iceState === 'failed') {
         setConnectionStatus(iceState === 'failed' ? 'failed' : 'disconnected');
         setIsConnected(false);
+        // Clear sessionId when ICE connection is lost to stop recording
+        if (iceState === 'failed' || iceState === 'disconnected' || iceState === 'closed') {
+          setSessionId(null);
+        }
       }
     });
 
@@ -161,26 +179,13 @@ export function useWebRTC(): UseWebRTCReturn {
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
 
-    // Create and send offer
+    // Create and send offer immediately (use Trickle ICE)
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Wait for ICE gathering to complete
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-        } else {
-          const checkState = () => {
-            if (pc.iceGatheringState === 'complete') {
-              pc.removeEventListener('icegatheringstatechange', checkState);
-              resolve();
-            }
-          };
-          pc.addEventListener('icegatheringstatechange', checkState);
-        }
-      });
-
+      // Send offer immediately without waiting for ICE gathering to complete
+      // This enables faster connection establishment using Trickle ICE
       const answer: OfferResponse = await sendOffer(pc.localDescription!, useStun);
       setSessionId(answer.sessionid);
       await pc.setRemoteDescription({

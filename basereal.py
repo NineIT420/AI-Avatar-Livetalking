@@ -90,7 +90,7 @@ class BaseReal:
         
         # Initialize video capture for streaming when no voice is input
         self.video_cap = None
-        self.video_path = getattr(opt, 'video', '')
+        self.video_path = os.path.expanduser(getattr(opt, 'video', ''))
         self.video_frame_index = 0
         self.video_total_frames = 0
         if self.video_path and os.path.exists(self.video_path):
@@ -191,20 +191,7 @@ class BaseReal:
         if self.recording:
             return
 
-        command = ['ffmpeg',
-                    '-y', '-an',
-                    '-f', 'rawvideo',
-                    '-vcodec','rawvideo',
-                    '-pix_fmt', 'bgr24', #像素格式
-                    '-s', "{}x{}".format(self.width, self.height),
-                    '-r', str(25),
-                    '-i', '-',
-                    '-pix_fmt', 'yuv420p', 
-                    '-vcodec', "h264",
-                    #'-f' , 'flv',                  
-                    f'temp{self.opt.sessionid}.mp4']
-        self._record_video_pipe = subprocess.Popen(command, shell=False, stdin=subprocess.PIPE)
-
+        # Initialize audio pipe immediately (dimensions are known)
         acommand = ['ffmpeg',
                     '-y', '-vn',
                     '-f', 's16le',
@@ -213,7 +200,7 @@ class BaseReal:
                     '-ar', '16000',
                     '-i', '-',
                     '-acodec', 'aac',
-                    #'-f' , 'wav',                  
+                    #'-f' , 'wav',
                     f'temp{self.opt.sessionid}.aac']
         self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
 
@@ -229,7 +216,24 @@ class BaseReal:
         if self.width == 0:
             print("image.shape:",image.shape)
             self.height,self.width,_ = image.shape
+
         if self.recording:
+            # Initialize video pipe on first frame with actual dimensions
+            if self._record_video_pipe is None:
+                command = ['ffmpeg',
+                          '-y', '-an',
+                          '-f', 'rawvideo',
+                          '-vcodec','rawvideo',
+                          '-pix_fmt', 'bgr24', #像素格式
+                          '-s', "{}x{}".format(self.width, self.height),
+                          '-r', str(25),
+                          '-i', '-',
+                          '-pix_fmt', 'yuv420p',
+                          '-vcodec', "h264",
+                          #'-f' , 'flv',
+                          f'temp{self.opt.sessionid}.mp4']
+                self._record_video_pipe = subprocess.Popen(command, shell=False, stdin=subprocess.PIPE)
+
             self._record_video_pipe.stdin.write(image.tobytes())
 
     def record_audio_data(self,frame):
@@ -303,9 +307,10 @@ class BaseReal:
         
         # Flush and close video pipe
         try:
-            self._record_video_pipe.stdin.flush()
-            self._record_video_pipe.stdin.close()
-            self._record_video_pipe.wait()
+            if self._record_video_pipe is not None:
+                self._record_video_pipe.stdin.flush()
+                self._record_video_pipe.stdin.close()
+                self._record_video_pipe.wait()
         except Exception as e:
             logger.warning(f"Error closing video pipe: {e}")
         
