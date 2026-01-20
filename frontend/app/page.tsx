@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useWebRTC } from '@/hooks/useWebRTC';
 import { useRecording } from '@/hooks/useRecording';
+import { useAsyncError } from '@/hooks/useAsyncError';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { Controls } from '@/components/Controls';
 import { StatusDisplay } from '@/components/StatusDisplay';
@@ -10,6 +11,8 @@ import { StatusDisplay } from '@/components/StatusDisplay';
 export default function Home() {
   const { peerConnection, isConnected, connectionStatus, latency, sessionId, start, stop, videoRef, audioRef } = useWebRTC();
   const { isRecording, startRecord, stopRecord, error: recordingError } = useRecording();
+  const { execute: executeStart, error: startError, isLoading: isStarting } = useAsyncError();
+  const { execute: executeStop, error: stopError, isLoading: isStopping } = useAsyncError();
 
   // Automatically start/stop recording when sessionId changes
   useEffect(() => {
@@ -35,18 +38,26 @@ export default function Home() {
   }, [sessionId, isRecording, startRecord, stopRecord]);
 
   const handleStart = async () => {
-    try {
-      await start(true); // STUN server enabled
-      // Recording will start automatically when sessionId becomes available
-    } catch (error) {
-      console.error('Failed to start WebRTC:', error);
-      alert('Failed to start connection. Please check your browser permissions and try again.');
-    }
+    await executeStart(
+      () => start(true), // STUN server enabled
+      undefined, // onSuccess
+      (error) => {
+        console.error('Failed to start WebRTC:', error);
+        alert('Failed to start connection. Please check your browser permissions and try again.');
+      }
+    );
   };
 
-  const handleStop = () => {
-    stop();
-    // Recording will stop automatically when connection stops
+  const handleStop = async () => {
+    await executeStop(
+      () => Promise.resolve(stop()),
+      undefined, // onSuccess
+      (error) => {
+        console.error('Failed to stop WebRTC:', error);
+        // Still try to stop even if there was an error
+        stop();
+      }
+    );
   };
 
 
@@ -72,7 +83,8 @@ export default function Home() {
               isConnected={isConnected}
               onStart={handleStart}
               onStop={handleStop}
-              error={recordingError}
+              error={recordingError || startError || stopError}
+              isLoading={isStarting || isStopping}
             />
           </div>
 

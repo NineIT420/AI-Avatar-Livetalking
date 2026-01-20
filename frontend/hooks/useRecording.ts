@@ -1,21 +1,15 @@
 import { useState, useRef, useCallback } from 'react';
 import { startRecording, stopRecording, streamAudioChunk } from '@/services/api';
-
-interface UseRecordingReturn {
-  isRecording: boolean;
-  startRecord: (sessionId: number) => Promise<void>;
-  stopRecord: (sessionId: number) => Promise<void>;
-  error: string | null;
-}
+import { config } from '@/utils/config';
+import type { UseRecordingReturn } from '@/types';
 
 export function useRecording(): UseRecordingReturn {
   const [isRecording, setIsRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const chunkIndexRef = useRef<number>(0);
-  const audioChunksRef = useRef<Float32Array[]>([]); // For fallback batch processing
 
   const startRecord = useCallback(async (sessionId: number) => {
     try {
@@ -27,79 +21,80 @@ export function useRecording(): UseRecordingReturn {
       // Start microphone audio recording with Web Audio API
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 16000, // Match backend expectations
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true
+          sampleRate: config.audio.sampleRate,
+          channelCount: config.audio.channelCount,
+          echoCancellation: config.audio.echoCancellation,
+          noiseSuppression: config.audio.noiseSuppression
         }
       });
       mediaStreamRef.current = stream;
       chunkIndexRef.current = 0;
-      audioChunksRef.current = [];
 
       // Create AudioContext
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
-        sampleRate: 16000
+        sampleRate: config.audio.sampleRate
       });
 
-      // Create source and processor
+      // Create source and AudioWorklet processor
       const source = audioContextRef.current.createMediaStreamSource(stream);
-      const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1); // 4096 samples ≈ 256ms at 16kHz
 
-      processor.onaudioprocess = async (event) => {
-        const inputBuffer = event.inputBuffer;
-        const inputData = inputBuffer.getChannelData(0);
+      // Load and create AudioWorkletNode
+      await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
+      const workletNode = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
 
-        try {
-          // Convert Float32Array to Int16Array (16-bit PCM)
-          const pcmData = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-          }
+      workletNode.port.onmessage = async (event) => {
+        if (event.data.type === 'audioData') {
+          const inputData = event.data.data;
 
-          // Create WAV blob from PCM data
-          const wavBlob = createWavBlob(pcmData, 16000);
-
-          // Stream audio chunk to server for real-time inference
-          const response = await streamAudioChunk(wavBlob, sessionId, chunkIndexRef.current);
-          if (response.code === 0) {
-            console.log(`Audio chunk ${chunkIndexRef.current} streamed successfully`);
-          } else {
-            console.error(`Failed to stream audio chunk ${chunkIndexRef.current}:`, response.msg);
-            // If session not found, stop recording automatically
-            if (response.msg && response.msg.includes('Session') && response.msg.includes('not found')) {
-              console.warn('Session not found on server, stopping recording');
-              // setError('Connection lost - session ended on server');
-              // Stop the recording and audio processing
-              if (processorRef.current) {
-                processorRef.current.disconnect();
-                processorRef.current = null;
-              }
-              if (audioContextRef.current) {
-                await audioContextRef.current.close();
-                audioContextRef.current = null;
-              }
-              if (mediaStreamRef.current) {
-                mediaStreamRef.current.getTracks().forEach(track => track.stop());
-                mediaStreamRef.current = null;
-              }
-              setIsRecording(false);
-              chunkIndexRef.current = 0;
-              audioChunksRef.current = [];
-              return; // Exit the processor function
+          try {
+            // Convert Float32Array to Int16Array (16-bit PCM)
+            const pcmData = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
             }
+
+            // Create WAV blob from PCM data
+            const wavBlob = createWavBlob(pcmData, config.audio.sampleRate);
+
+            // Stream audio chunk to server for real-time inference
+            const response = await streamAudioChunk(wavBlob, sessionId, chunkIndexRef.current);
+            if (response.code === 0) {
+              // Audio chunk streamed successfully - silent success for performance
+            } else {
+              console.error(`Failed to stream audio chunk ${chunkIndexRef.current}:`, response.msg);
+              // If session not found, stop recording automatically
+              if (response.msg && response.msg.includes('Session') && response.msg.includes('not found')) {
+                console.warn('Session not found on server, stopping recording');
+                // Stop the recording and audio processing
+                if (workletNodeRef.current) {
+                  workletNodeRef.current.disconnect();
+                  workletNodeRef.current = null;
+                }
+                if (audioContextRef.current) {
+                  await audioContextRef.current.close();
+                  audioContextRef.current = null;
+                }
+                if (mediaStreamRef.current) {
+                  mediaStreamRef.current.getTracks().forEach(track => track.stop());
+                  mediaStreamRef.current = null;
+                }
+                setIsRecording(false);
+                chunkIndexRef.current = 0;
+                return; // Exit the processor function
+              }
+            }
+            chunkIndexRef.current++;
+          } catch (err) {
+            console.error('Error processing audio chunk:', err);
           }
-          chunkIndexRef.current++;
-        } catch (err) {
-          console.error('Error processing audio chunk:', err);
         }
       };
 
       // Connect the nodes
-      source.connect(processor);
-      processor.connect(audioContextRef.current.destination);
+      source.connect(workletNode);
+      workletNode.connect(audioContextRef.current.destination);
 
-      processorRef.current = processor;
+      workletNodeRef.current = workletNode;
       setIsRecording(true);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to start recording';
@@ -118,9 +113,9 @@ export function useRecording(): UseRecordingReturn {
         await stopRecording(sessionId);
 
         // Disconnect and clean up Web Audio API
-        if (processorRef.current) {
-          processorRef.current.disconnect();
-          processorRef.current = null;
+        if (workletNodeRef.current) {
+          workletNodeRef.current.disconnect();
+          workletNodeRef.current = null;
         }
 
         if (audioContextRef.current) {
@@ -135,7 +130,6 @@ export function useRecording(): UseRecordingReturn {
         }
 
         setIsRecording(false);
-        console.log('Recording stopped. Total chunks streamed:', chunkIndexRef.current);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to stop recording';
         setError(errorMessage);
