@@ -13,9 +13,7 @@ export function useWebRTC(): UseWebRTCReturn {
   const audioRef = useRef<HTMLAudioElement>(null);
   const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Function to measure latency using WebRTC stats with performance optimizations
   const measureLatency = useCallback(async (pc: RTCPeerConnection) => {
-    // Early return if connection is not in a good state
     if (pc.connectionState !== 'connected' || (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed')) {
       return;
     }
@@ -25,17 +23,12 @@ export function useWebRTC(): UseWebRTCReturn {
       let minRtt = Infinity;
       let foundRtt = false;
 
-      // Iterate through all stats reports with early optimization
       for (const [id, report] of stats.entries()) {
-        // Only check relevant stat types
         if (report.type === 'candidate-pair') {
           const candidatePair = report as any;
-          // Check if the candidate pair is active/succeeded
           if (candidatePair.state === 'succeeded' || candidatePair.state === 'in-progress') {
-            // Access RTT properties - they might be in different formats
             let rtt: number | null = null;
 
-            // Try different property names (browser-dependent)
             if ('currentRoundTripTime' in candidatePair && candidatePair.currentRoundTripTime) {
               rtt = candidatePair.currentRoundTripTime;
             } else if ('totalRoundTripTime' in candidatePair && candidatePair.totalRoundTripTime) {
@@ -50,7 +43,6 @@ export function useWebRTC(): UseWebRTCReturn {
             }
           }
         }
-        // Check transport stats as fallback
         else if (report.type === 'transport' && !foundRtt) {
           const transport = report as any;
           if ('currentRoundTripTime' in transport && transport.currentRoundTripTime) {
@@ -61,7 +53,6 @@ export function useWebRTC(): UseWebRTCReturn {
             }
           }
         }
-        // Check inbound-rtp stats as last resort
         else if (report.type === 'inbound-rtp' && !foundRtt) {
           const inboundRtp = report as any;
           if ('roundTripTime' in inboundRtp && inboundRtp.roundTripTime) {
@@ -73,17 +64,13 @@ export function useWebRTC(): UseWebRTCReturn {
           }
         }
 
-        // Early exit if we found RTT and it's reasonable
         if (foundRtt && minRtt !== Infinity && minRtt > 0 && minRtt < 1) {
           break;
         }
       }
 
-      // If we found a valid RTT, update latency
       if (foundRtt && minRtt !== Infinity && minRtt > 0) {
-        // RTT from stats is in seconds, convert to milliseconds
         const latencyMs = Math.round(minRtt * 1000);
-        // Only update if latency changed significantly (prevent unnecessary re-renders)
         setLatency(prevLatency => {
           if (prevLatency === null || Math.abs(prevLatency - latencyMs) > 5) {
             return latencyMs;
@@ -92,12 +79,9 @@ export function useWebRTC(): UseWebRTCReturn {
         });
       }
     } catch (error) {
-      // Silent error handling for performance - don't log on every measurement failure
-      console.warn('Latency measurement failed:', error);
     }
   }, []);
 
-  // Helper function to create WebRTC configuration
   const createRTCConfig = useCallback((useStun: boolean): RTCConfiguration => {
     const rtcConfig: RTCConfiguration = {};
 
@@ -111,7 +95,6 @@ export function useWebRTC(): UseWebRTCReturn {
     return rtcConfig;
   }, []);
 
-  // Helper function to setup connection state listeners
   const setupConnectionListeners = useCallback((pc: RTCPeerConnection) => {
     const handleConnectionStateChange = () => {
       const state = pc.connectionState;
@@ -132,7 +115,6 @@ export function useWebRTC(): UseWebRTCReturn {
     };
   }, []);
 
-  // Helper function to setup track listeners
   const setupTrackListeners = useCallback((pc: RTCPeerConnection) => {
     pc.addEventListener('track', (evt) => {
       if (evt.track.kind === 'video' && videoRef.current) {
@@ -143,7 +125,6 @@ export function useWebRTC(): UseWebRTCReturn {
     });
   }, []);
 
-  // Helper function to update connection state
   const updateConnectionState = useCallback((state: RTCPeerConnectionState) => {
     switch (state) {
       case 'connected':
@@ -167,7 +148,6 @@ export function useWebRTC(): UseWebRTCReturn {
     }
   }, []);
 
-  // Helper function to update ICE connection state
   const updateIceConnectionState = useCallback((iceState: RTCIceConnectionState) => {
     switch (iceState) {
       case 'connected':
@@ -190,7 +170,6 @@ export function useWebRTC(): UseWebRTCReturn {
     }
   }, []);
 
-  // Helper function to setup latency measurement
   const setupLatencyMeasurement = useCallback((pc: RTCPeerConnection) => {
     if (statsIntervalRef.current) {
       clearInterval(statsIntervalRef.current);
@@ -230,13 +209,11 @@ export function useWebRTC(): UseWebRTCReturn {
     setTimeout(checkConnection, 500);
   }, [measureLatency]);
 
-  // Helper function to check if connection is active
   const isConnectionActive = useCallback((pc: RTCPeerConnection): boolean => {
     return pc.connectionState === 'connected' &&
            (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed');
   }, []);
 
-  // Main start function - now much cleaner and focused
   const start = useCallback(async (useStun: boolean) => {
     setConnectionStatus('connecting');
     setLatency(null);
@@ -244,16 +221,13 @@ export function useWebRTC(): UseWebRTCReturn {
     const rtcConfig = createRTCConfig(useStun);
     const pc = new RTCPeerConnection(rtcConfig);
 
-    // Setup all listeners
     const cleanupListeners = setupConnectionListeners(pc);
     setupTrackListeners(pc);
 
-    // Add transceivers
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
 
     try {
-      // Create and exchange offer/answer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -267,7 +241,6 @@ export function useWebRTC(): UseWebRTCReturn {
       setPeerConnection(pc);
       setupLatencyMeasurement(pc);
     } catch (error) {
-      console.error('Error starting WebRTC:', error);
       setConnectionStatus('failed');
       pc.close();
       throw error;
@@ -291,7 +264,6 @@ export function useWebRTC(): UseWebRTCReturn {
     }
   }, [peerConnection]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (statsIntervalRef.current) {
@@ -303,7 +275,6 @@ export function useWebRTC(): UseWebRTCReturn {
     };
   }, [peerConnection]);
 
-  // Handle page unload
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (peerConnection) {

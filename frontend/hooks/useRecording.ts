@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { startRecording, stopRecording, streamAudioChunk } from '@/services/api';
+import { startRecording, stopRecording, streamAudioChunk, connectAudioWebSocket, disconnectAudioWebSocket } from '@/services/api';
 import { config } from '@/utils/config';
 import type { UseRecordingReturn } from '@/types';
 
@@ -15,10 +15,10 @@ export function useRecording(): UseRecordingReturn {
     try {
       setError(null);
 
-      // Start server-side recording
       await startRecording(sessionId);
 
-      // Start microphone audio recording with Web Audio API
+      await connectAudioWebSocket(sessionId);
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: config.audio.sampleRate,
@@ -30,15 +30,12 @@ export function useRecording(): UseRecordingReturn {
       mediaStreamRef.current = stream;
       chunkIndexRef.current = 0;
 
-      // Create AudioContext
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
         sampleRate: config.audio.sampleRate
       });
 
-      // Create source and AudioWorklet processor
       const source = audioContextRef.current.createMediaStreamSource(stream);
 
-      // Load and create AudioWorkletNode
       await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
       const workletNode = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
 
@@ -47,25 +44,17 @@ export function useRecording(): UseRecordingReturn {
           const inputData = event.data.data;
 
           try {
-            // Convert Float32Array to Int16Array (16-bit PCM)
             const pcmData = new Int16Array(inputData.length);
             for (let i = 0; i < inputData.length; i++) {
               pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
             }
 
-            // Create WAV blob from PCM data
             const wavBlob = createWavBlob(pcmData, config.audio.sampleRate);
 
-            // Stream audio chunk to server for real-time inference
             const response = await streamAudioChunk(wavBlob, sessionId, chunkIndexRef.current);
             if (response.code === 0) {
-              // Audio chunk streamed successfully - silent success for performance
             } else {
-              console.error(`Failed to stream audio chunk ${chunkIndexRef.current}:`, response.msg);
-              // If session not found, stop recording automatically
               if (response.msg && response.msg.includes('Session') && response.msg.includes('not found')) {
-                console.warn('Session not found on server, stopping recording');
-                // Stop the recording and audio processing
                 if (workletNodeRef.current) {
                   workletNodeRef.current.disconnect();
                   workletNodeRef.current = null;
@@ -80,17 +69,15 @@ export function useRecording(): UseRecordingReturn {
                 }
                 setIsRecording(false);
                 chunkIndexRef.current = 0;
-                return; // Exit the processor function
+                return;
               }
             }
             chunkIndexRef.current++;
           } catch (err) {
-            console.error('Error processing audio chunk:', err);
           }
         }
       };
 
-      // Connect the nodes
       source.connect(workletNode);
       workletNode.connect(audioContextRef.current.destination);
 
@@ -99,8 +86,7 @@ export function useRecording(): UseRecordingReturn {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to start recording';
       setError(errorMessage);
-      console.error('Error starting recording:', err);
-      setIsRecording(true); // Still set to true so stop button is enabled
+      setIsRecording(true);
     }
   }, []);
 
@@ -109,10 +95,10 @@ export function useRecording(): UseRecordingReturn {
       try {
         setError(null);
 
-        // Stop server-side recording
         await stopRecording(sessionId);
 
-        // Disconnect and clean up Web Audio API
+        disconnectAudioWebSocket();
+
         if (workletNodeRef.current) {
           workletNodeRef.current.disconnect();
           workletNodeRef.current = null;
@@ -123,7 +109,6 @@ export function useRecording(): UseRecordingReturn {
           audioContextRef.current = null;
         }
 
-        // Stop all audio tracks
         if (mediaStreamRef.current) {
           mediaStreamRef.current.getTracks().forEach((track) => track.stop());
           mediaStreamRef.current = null;
@@ -133,7 +118,6 @@ export function useRecording(): UseRecordingReturn {
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to stop recording';
         setError(errorMessage);
-        console.error('Error stopping recording:', err);
         setIsRecording(false);
       }
     },
@@ -148,14 +132,10 @@ export function useRecording(): UseRecordingReturn {
   };
 }
 
-/**
- * Creates a WAV blob from PCM data
- */
 function createWavBlob(pcmData: Int16Array, sampleRate: number): Blob {
   const buffer = new ArrayBuffer(44 + pcmData.length * 2);
   const view = new DataView(buffer);
 
-  // WAV header
   const writeString = (offset: number, string: string) => {
     for (let i = 0; i < string.length; i++) {
       view.setUint8(offset + i, string.charCodeAt(i));
@@ -176,7 +156,6 @@ function createWavBlob(pcmData: Int16Array, sampleRate: number): Blob {
   writeString(36, 'data');
   view.setUint32(40, pcmData.length * 2, true);
 
-  // PCM data
   const pcmView = new Int16Array(buffer, 44);
   pcmView.set(pcmData);
 

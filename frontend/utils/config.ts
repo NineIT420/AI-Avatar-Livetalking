@@ -1,8 +1,3 @@
-/**
- * Centralized configuration management
- * All environment variables should be defined here
- */
-
 interface AppConfig {
   api: {
     baseUrl: string;

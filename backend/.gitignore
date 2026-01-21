@@ -3,11 +3,10 @@ build/
 *.egg-info/
 *.so
 *.mp4
-
+*.aac
 tmp*
 trial*/
 
-data
 data_utils/face_tracking/3DMM/*
 data_utils/face_parsing/79999_iter.pth
 
@@ -16,6 +15,12 @@ pretrained
 .DS_Store
 workspace/log_ngp.txt
 .idea
-models/
+models/face-parse-bisent/
+models/musetalkV15/
+models/sd-vae/
+models/whisper/
+models/vqvae.pth
+musetalk/
+data/*
 *.log
 dist

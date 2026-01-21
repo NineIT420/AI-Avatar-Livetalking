@@ -14,9 +14,8 @@ const VideoPlayer = memo(function VideoPlayer({ videoRef, audioRef }: VideoPlaye
       setHasVideo(!!video.srcObject);
     };
 
-    // Check periodically (simpler approach)
     const interval = setInterval(checkVideo, 500);
-    checkVideo(); // Initial check
+    checkVideo();
 
     return () => clearInterval(interval);
   }, [videoRef]);

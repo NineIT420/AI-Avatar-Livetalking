@@ -1,9 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { UseAsyncErrorReturn } from '@/types';
 
-/**
- * Custom hook for handling async operations with error management
- */
 export function useAsyncError(): UseAsyncErrorReturn {
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState(false);

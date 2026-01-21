@@ -1,9 +1,51 @@
 import { config } from '@/utils/config';
 import type { OfferResponse, RecordRequest, HumanAudioResponse } from '@/types';
 
-/**
- * Sends WebRTC offer to server and gets answer
- */
+let audioWebSocket: WebSocket | null = null;
+let isWebSocketConnected = false;
+
+export async function connectAudioWebSocket(sessionId: number): Promise<void> {
+  if (audioWebSocket && isWebSocketConnected) {
+    return;
+  }
+
+  return new Promise((resolve, reject) => {
+    const wsUrl = `${config.api.baseUrl.replace(/^http/, 'ws')}/ws/audio?sessionid=${sessionId}`;
+    audioWebSocket = new WebSocket(wsUrl);
+
+    audioWebSocket.onopen = () => {
+      isWebSocketConnected = true;
+      resolve();
+    };
+
+    audioWebSocket.onclose = () => {
+      isWebSocketConnected = false;
+      audioWebSocket = null;
+    };
+
+    audioWebSocket.onerror = (error) => {
+      isWebSocketConnected = false;
+      reject(new Error('Failed to connect to audio WebSocket'));
+    };
+
+    audioWebSocket.onmessage = (event) => {
+      
+    };
+  });
+}
+
+export function disconnectAudioWebSocket(): void {
+  if (audioWebSocket) {
+    audioWebSocket.close();
+    audioWebSocket = null;
+    isWebSocketConnected = false;
+  }
+}
+
+export function isAudioWebSocketConnected(): boolean {
+  return isWebSocketConnected;
+}
+
 export async function sendOffer(offer: RTCSessionDescriptionInit, useStun: boolean): Promise<OfferResponse> {
   const response = await fetch(`${config.api.baseUrl}/offer`, {
     method: 'POST',
@@ -24,9 +66,6 @@ export async function sendOffer(offer: RTCSessionDescriptionInit, useStun: boole
   return response.json();
 }
 
-/**
- * Starts server-side recording
- */
 export async function startRecording(sessionId: number): Promise<void> {
   const response = await fetch(`${config.api.baseUrl}/record`, {
     method: 'POST',
@@ -45,9 +84,6 @@ export async function startRecording(sessionId: number): Promise<void> {
   }
 }
 
-/**
- * Stops server-side recording
- */
 export async function stopRecording(sessionId: number): Promise<void> {
   const response = await fetch(`${config.api.baseUrl}/record`, {
     method: 'POST',
@@ -66,9 +102,6 @@ export async function stopRecording(sessionId: number): Promise<void> {
   }
 }
 
-/**
- * Sends recorded audio to server
- */
 export async function sendAudio(audioBlob: Blob, sessionId: number): Promise<HumanAudioResponse> {
   const formData = new FormData();
   formData.append('file', audioBlob, 'recording.wav');
@@ -87,25 +120,15 @@ export async function sendAudio(audioBlob: Blob, sessionId: number): Promise<Hum
   return response.json();
 }
 
-/**
- * Streams audio chunk to server for real-time inference
- */
 export async function streamAudioChunk(audioBlob: Blob, sessionId: number, chunkIndex: number): Promise<HumanAudioResponse> {
-  const formData = new FormData();
-  formData.append('file', audioBlob, 'chunk.wav');
-  formData.append('sessionid', sessionId.toString());
-  formData.append('chunk_index', chunkIndex.toString());
-
-  const response = await fetch(`${config.api.baseUrl}/humanaudio`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ msg: response.statusText }));
-    throw new Error(error.msg || `Failed to stream audio chunk: ${response.statusText}`);
+  if (!audioWebSocket || !isWebSocketConnected) {
+    throw new Error('Audio WebSocket not connected');
   }
 
-  return response.json();
+  const arrayBuffer = await audioBlob.arrayBuffer();
+
+  audioWebSocket.send(arrayBuffer);
+
+  return { code: 0, msg: 'ok' };
 }
 
