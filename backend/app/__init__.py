@@ -1,1 +1,0 @@
-"""LiveTalking application package."""
