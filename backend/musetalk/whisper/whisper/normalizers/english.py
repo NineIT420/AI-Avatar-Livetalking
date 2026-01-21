@@ -10,15 +10,6 @@ from .basic import remove_symbols_and_diacritics
 
 
 class EnglishNumberNormalizer:
-    """
-    Convert any spelled-out numbers into arabic numbers, while handling:
-
-    - remove any commas
-    - keep the suffixes such as: `1960s`, `274th`, `32nd`, etc.
-    - spell out currency symbols after the number. e.g. `$20 million` -> `20000000 dollars`
-    - spell out `one` and `ones`
-    - interpret successive single-digit numbers as nominal: `one oh one` -> `101`
-    """
 
     def __init__(self):
         super().__init__()
@@ -379,7 +370,6 @@ class EnglishNumberNormalizer:
             yield output(value)
 
     def preprocess(self, s: str):
-        # replace "<number> and a half" with "<number> point five"
         results = []
 
         segments = re.split(r"\band\s+a\s+half\b", s)
@@ -398,11 +388,9 @@ class EnglishNumberNormalizer:
 
         s = " ".join(results)
 
-        # put a space at number/letter boundary
         s = re.sub(r"([a-z])([0-9])", r"\1 \2", s)
         s = re.sub(r"([0-9])([a-z])", r"\1 \2", s)
 
-        # but remove spaces which could be a suffix
         s = re.sub(r"([0-9])\s+(st|nd|rd|th|s)\b", r"\1\2", s)
 
         return s
@@ -423,11 +411,9 @@ class EnglishNumberNormalizer:
             except ValueError:
                 return m.string
 
-        # apply currency postprocessing; "$2 and ¢7" -> "$2.07"
         s = re.sub(r"([€£$])([0-9]+) (?:and )?¢([0-9]{1,2})\b", combine_cents, s)
         s = re.sub(r"[€£$]0.([0-9]{1,2})\b", extract_cents, s)
 
-        # write "one(s)" instead of "1(s)", just for the readability
         s = re.sub(r"\b1(s?)\b", r"one\1", s)
 
         return s
@@ -441,12 +427,6 @@ class EnglishNumberNormalizer:
 
 
 class EnglishSpellingNormalizer:
-    """
-    Applies British-American spelling mappings as listed in [1].
-
-    [1] https://www.tysto.com/uk-us-spelling-list.html
-    """
-
     def __init__(self):
         mapping_path = os.path.join(os.path.dirname(__file__), "english.json")
         self.mapping = json.load(open(mapping_path))
@@ -459,7 +439,6 @@ class EnglishTextNormalizer:
     def __init__(self):
         self.ignore_patterns = r"\b(hmm|mm|mhm|mmm|uh|um)\b"
         self.replacers = {
-            # common contractions
             r"\bwon't\b": "will not",
             r"\bcan't\b": "can not",
             r"\blet's\b": "let us",
@@ -474,7 +453,6 @@ class EnglishTextNormalizer:
             r"\bcoulda\b": "could have",
             r"\bshoulda\b": "should have",
             r"\bma'am\b": "madam",
-            # contractions in titles/prefixes
             r"\bmr\b": "mister ",
             r"\bmrs\b": "missus ",
             r"\bst\b": "saint ",
@@ -496,14 +474,12 @@ class EnglishTextNormalizer:
             r"\bjr\b": "junior ",
             r"\bsr\b": "senior ",
             r"\besq\b": "esquire ",
-            # prefect tenses, ideally it should be any past participles, but it's harder..
             r"'d been\b": " had been",
             r"'s been\b": " has been",
             r"'d gone\b": " had gone",
             r"'s gone\b": " has gone",
-            r"'d done\b": " had done",  # "'s done" is ambiguous
+            r"'d done\b": " had done",
             r"'s got\b": " has got",
-            # general contractions
             r"n't\b": " not",
             r"'re\b": " are",
             r"'s\b": " is",
@@ -519,25 +495,24 @@ class EnglishTextNormalizer:
     def __call__(self, s: str):
         s = s.lower()
 
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)
+        s = re.sub(r"\(([^)]+?)\)", "", s)
         s = re.sub(self.ignore_patterns, "", s)
-        s = re.sub(r"\s+'", "'", s)  # standardize when there's a space before an apostrophe
+        s = re.sub(r"\s+'", "'", s)
 
         for pattern, replacement in self.replacers.items():
             s = re.sub(pattern, replacement, s)
 
-        s = re.sub(r"(\d),(\d)", r"\1\2", s)  # remove commas between digits
-        s = re.sub(r"\.([^0-9]|$)", r" \1", s)  # remove periods not followed by numbers
-        s = remove_symbols_and_diacritics(s, keep=".%$¢€£")  # keep some symbols for numerics
+        s = re.sub(r"(\d),(\d)", r"\1\2", s)
+        s = re.sub(r"\.([^0-9]|$)", r" \1", s)
+        s = remove_symbols_and_diacritics(s, keep=".%$¢€£")
 
         s = self.standardize_numbers(s)
         s = self.standardize_spellings(s)
 
-        # now remove prefix/suffix symbols that are not preceded/followed by numbers
         s = re.sub(r"[.$¢€£]([^0-9])", r" \1", s)
         s = re.sub(r"([^0-9])%", r"\1 ", s)
 
-        s = re.sub(r"\s+", " ", s)  # replace any successive whitespace characters with a space
+        s = re.sub(r"\s+", " ", s)
 
         return s

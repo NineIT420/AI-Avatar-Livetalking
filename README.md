@@ -16,6 +16,29 @@ Before setting up the project, ensure you have the following installed:
 - **OpenSSL** (for HTTPS certificates)
 - **Git**
 
+## Environment Requirements
+
+### Hardware Requirements
+
+- **RAM**: Minimum 8GB, recommended 16GB or more for optimal performance
+- **GPU**: NVIDIA GPU with CUDA support (recommended for AI inference acceleration)
+  - Minimum: GTX 1060 or equivalent
+  - Recommended: RTX 3060 or higher
+- **Storage**: Minimum 10GB free disk space
+- **Network**: Stable internet connection (required for WebRTC streaming and model downloads)
+
+### Software Requirements
+
+- **Operating System**: Linux (Ubuntu 18.04+), macOS (10.15+), or Windows 10+
+- **CUDA**: Version 11.0+ (if using GPU acceleration)
+- **WebRTC-compatible browser**: Chrome 88+, Firefox 85+, Safari 14+, or Edge 88+
+
+### Performance Notes
+
+- GPU acceleration significantly improves avatar rendering performance
+- CPU-only mode is supported but may result in lower frame rates
+- Real-time video processing requires consistent CPU/GPU performance
+
 ## Project Structure
 
 ```

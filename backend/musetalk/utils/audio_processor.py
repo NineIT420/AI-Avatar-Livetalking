@@ -17,7 +17,6 @@ class AudioProcessor:
             return None
         librosa_output, sampling_rate = librosa.load(wav_path, sr=16000)
         assert sampling_rate == 16000
-        # Split audio into 30s segments
         segment_length = 30 * sampling_rate
         segments = [librosa_output[i:i + segment_length] for i in range(0, len(librosa_output), segment_length)]
 
@@ -47,7 +46,6 @@ class AudioProcessor:
     ):
         audio_feature_length_per_frame = 2 * (audio_padding_length_left + audio_padding_length_right + 1)
         whisper_feature = []
-        # Process multiple 30s mel input features
         for input_feature in whisper_input_features:
             input_feature = input_feature.to(device).to(weight_dtype)
             audio_feats = whisper.encoder(input_feature, output_hidden_states=True).hidden_states
@@ -55,7 +53,6 @@ class AudioProcessor:
             whisper_feature.append(audio_feats)
 
         whisper_feature = torch.cat(whisper_feature, dim=1)
-        # Trim the last segment to remove padding
         sr = 16000
         audio_fps = 50
         fps = int(fps)
@@ -64,13 +61,10 @@ class AudioProcessor:
         actual_length = math.floor((librosa_length / sr) * audio_fps)
         whisper_feature = whisper_feature[:,:actual_length,...]
 
-        # Calculate padding amount
         padding_nums = math.ceil(whisper_idx_multiplier)
-        # Add padding at start and end
         whisper_feature = torch.cat([
             torch.zeros_like(whisper_feature[:, :padding_nums * audio_padding_length_left]),
             whisper_feature,
-            # Add extra padding to prevent out of bounds
             torch.zeros_like(whisper_feature[:, :padding_nums * 3 * audio_padding_length_right])
         ], 1)
 
@@ -89,7 +83,7 @@ class AudioProcessor:
                 print(f"frame_index: {frame_index}, audio_index: {audio_index}-{audio_index + audio_feature_length_per_frame}")
                 exit()
 
-        audio_prompts = torch.cat(audio_prompts, dim=0)  # T, 10, 5, 384
+        audio_prompts = torch.cat(audio_prompts, dim=0)
         audio_prompts = rearrange(audio_prompts, 'b c h w -> b (c h) w')
         return audio_prompts
 

@@ -46,7 +46,6 @@ class Net(nn.Module):
 logger = logging.getLogger(__name__)
 
 def initialize_models_and_optimizers(cfg, accelerator, weight_dtype):
-    """Initialize models and optimizers"""
     model_dict = {
         'vae': None,
         'unet': None,
@@ -142,7 +141,6 @@ def initialize_models_and_optimizers(cfg, accelerator, weight_dtype):
     return model_dict
 
 def initialize_dataloaders(cfg):
-    """Initialize training and validation dataloaders"""
     dataloader_dict = {
         'train_dataset': None,
         'val_dataset': None,
@@ -199,7 +197,6 @@ def initialize_dataloaders(cfg):
     return dataloader_dict
 
 def initialize_loss_functions(cfg, accelerator, scheduler_max_steps):
-    """Initialize loss functions and discriminators"""
     loss_dict = {
         'L1_loss': nn.L1Loss(reduction='mean'),
         'discriminator': None,
@@ -249,7 +246,6 @@ def initialize_loss_functions(cfg, accelerator, scheduler_max_steps):
     return loss_dict
 
 def initialize_syncnet(cfg, accelerator, weight_dtype):
-    """Initialize SyncNet model"""
     if cfg.loss_params.sync_loss > 0 or cfg.use_adapted_weight:
         if cfg.data.n_sample_frames != 16:
             raise ValueError(
@@ -270,7 +266,6 @@ def initialize_syncnet(cfg, accelerator, weight_dtype):
     return None
 
 def initialize_vgg(cfg, accelerator):
-    """Initialize VGG model"""
     if cfg.loss_params.vgg_loss > 0:
         vgg_IN = vgg_face.Vgg19().to(accelerator.device,)
         pyramid = vgg_face.ImagePyramide(
@@ -293,10 +288,8 @@ def validation(
     weight_dtype,
     syncnet_score=1,
 ):
-    """Validation function for model evaluation"""
-    net.eval()  # Set the model to evaluation mode
+    net.eval()
     for batch in val_dataloader:
-        # The same ref_latents
         ref_pixel_values = batch["pixel_values_ref_img"].to(weight_dtype).to(
             accelerator.device, non_blocking=True
         )
@@ -306,7 +299,6 @@ def validation(
         bsz, num_frames, c, h, w = ref_pixel_values.shape
 
         audio_prompts = process_audio_features(cfg, batch, wav2vec, bsz, num_frames, weight_dtype)
-        # audio feature for unet
         audio_prompts = rearrange(
             audio_prompts, 
             'b f c h w-> (b f) c h w'
@@ -316,7 +308,6 @@ def validation(
             '(b f) c h w -> (b f) (c h) w', 
             b=bsz
         )
-        # different masked_latents
         image_pred_train = get_image_pred(
             pixel_values, ref_pixel_values, audio_prompts, vae, net, weight_dtype)
         image_pred_infer = get_image_pred(
@@ -332,6 +323,5 @@ def validation(
             cfg.num_images_to_keep,
             syncnet_score
         )
-        # only infer 1 image in validation
         break
-    net.train()  # Set the model back to training mode
+    net.train()
