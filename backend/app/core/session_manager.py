@@ -3,8 +3,6 @@ from typing import Dict
 from concurrent.futures import ThreadPoolExecutor
 
 from config.settings import settings
-from ..utils.logger import logger
-
 
 class SessionManager:
 
@@ -19,7 +17,6 @@ class SessionManager:
         return sessionid in self.nerfreals and self.nerfreals[sessionid] is not None
 
     def cleanup_session(self, sessionid: int):
-        """Clean up a session."""
         if sessionid in self.nerfreals:
             del self.nerfreals[sessionid]
 

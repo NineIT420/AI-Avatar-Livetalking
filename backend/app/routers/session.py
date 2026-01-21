@@ -2,7 +2,6 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from config.settings import settings
-from ..utils.logger import logger
 from ..core.session_manager import session_manager
 
 router = APIRouter()
@@ -32,13 +31,11 @@ async def human(request: Request):
             content={"code": 0, "msg": "ok"}
         )
     except KeyError as e:
-        logger.exception(f'KeyError in human handler: {e}')
         return JSONResponse(
             status_code=200,
             content={"code": -1, "msg": f"Session not found: {e}"}
         )
     except Exception as e:
-        logger.exception('exception:')
         return JSONResponse(
             status_code=200,
             content={"code": -1, "msg": str(e)}
@@ -65,12 +62,10 @@ async def humanaudio(request: Request):
             content={"code": 0, "msg": "ok"}
         )
     except KeyError as e:
-        logger.exception(f'KeyError in humanaudio handler: {e}')
         return JSONResponse(
             content={"code": -1, "msg": f"Session not found: {e}"}
         )
     except Exception as e:
-        logger.exception('exception:')
         return JSONResponse(
             content={"code": -1, "msg": str(e)}
         )
@@ -94,12 +89,10 @@ async def set_audiotype(request: Request):
             content={"code": 0, "msg": "ok"}
         )
     except KeyError as e:
-        logger.exception(f'KeyError in set_audiotype handler: {e}')
         return JSONResponse(
             content={"code": -1, "msg": f"Session not found: {e}"}
         )
     except Exception as e:
-        logger.exception('exception:')
         return JSONResponse(
             content={"code": -1, "msg": str(e)}
         )
@@ -126,12 +119,10 @@ async def record(request: Request):
             content={"code": 0, "msg": "ok"}
         )
     except KeyError as e:
-        logger.exception(f'KeyError in record handler: {e}')
         return JSONResponse(
             content={"code": -1, "msg": f"Session not found: {e}"}
         )
     except Exception as e:
-        logger.exception('exception:')
         return JSONResponse(
             content={"code": -1, "msg": str(e)}
         )
@@ -155,13 +146,11 @@ async def interrupt_talk(request: Request):
             content={"code": 0, "msg": "ok"}
         )
     except KeyError as e:
-        logger.exception(f'KeyError in interrupt_talk handler: {e}')
         return JSONResponse(
             status_code=200,
             content={"code": -1, "msg": f"Session not found: {e}"}
         )
     except Exception as e:
-        logger.exception('exception:')
         return JSONResponse(
             content={"code": -1, "msg": str(e)}
         )
@@ -184,12 +173,10 @@ async def is_speaking(request: Request):
             content={"code": 0, "data": speaking}
         )
     except KeyError as e:
-        logger.exception(f'KeyError in is_speaking handler: {e}')
         return JSONResponse(
             content={"code": -1, "msg": f"Session not found: {e}"}
         )
     except Exception as e:
-        logger.exception('exception:')
         return JSONResponse(
             content={"code": -1, "msg": str(e)}
         )
@@ -202,8 +189,6 @@ async def audio_websocket(websocket: WebSocket, sessionid: int = 0):
     try:
         if sessionid == 0:
             sessionid = int(websocket.query_params.get('sessionid', 0))
-
-        logger.info(f"WebSocket connection established for session {sessionid}")
 
         if not session_manager.session_exists(sessionid):
             await websocket.send_json({"code": -1, "msg": f"Session {sessionid} not found"})
@@ -219,13 +204,11 @@ async def audio_websocket(websocket: WebSocket, sessionid: int = 0):
                 await websocket.send_json({"code": 0, "msg": "ok"})
 
             except WebSocketDisconnect:
-                logger.info(f"WebSocket disconnected for session {sessionid}")
                 break
             except Exception as e:
-                logger.error(f"Error processing WebSocket audio data for session {sessionid}: {e}")
                 await websocket.send_json({"code": -1, "msg": str(e)})
 
     except Exception as e:
-        logger.error(f"WebSocket error for session {sessionid}: {e}")
+        pass
     finally:
-        logger.info(f"WebSocket connection closed for session {sessionid}")
+        pass

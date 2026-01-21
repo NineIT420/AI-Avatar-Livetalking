@@ -8,7 +8,6 @@ from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceServer, RTCCo
 from aiortc.rtcrtpsender import RTCRtpSender
 
 from config.settings import settings
-from ..utils.logger import logger
 from ..webrtc import HumanPlayer
 from ..core.session_manager import session_manager
 
@@ -22,13 +21,13 @@ async def on_shutdown():
         try:
             coros.append(asyncio.wait_for(pc.close(), timeout=2.0))
         except Exception as e:
-            logger.debug(f"Error preparing to close peer connection: {e}")
+            pass
 
     if coros:
         results = await asyncio.gather(*coros, return_exceptions=True)
         for result in results:
             if isinstance(result, Exception) and not isinstance(result, asyncio.TimeoutError):
-                logger.debug(f"Error closing peer connection: {result}")
+                pass
     pcs.clear()
 
 
@@ -45,7 +44,6 @@ async def offer(request: Request):
 
     sessionid = randN(6)
     session_manager.create_session(sessionid)
-    logger.info('sessionid=%d, session num=%d', sessionid, len(session_manager.nerfreals))
 
     nerfreal = await asyncio.get_event_loop().run_in_executor(
         None, session_manager.build_nerfreal, sessionid
@@ -71,15 +69,14 @@ async def offer(request: Request):
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
-        logger.info("Connection state is %s" % pc.connectionState)
         try:
             if pc.connectionState == "failed":
                 try:
                     await asyncio.wait_for(pc.close(), timeout=2.0)
                 except asyncio.TimeoutError:
-                    logger.debug("Timeout closing peer connection in failed state")
+                    pass
                 except Exception as e:
-                    logger.debug(f"Error closing peer connection in failed state: {e}")
+                    pass
                 finally:
                     pcs.discard(pc)
                     session_manager.cleanup_session(sessionid)
@@ -87,9 +84,9 @@ async def offer(request: Request):
                 pcs.discard(pc)
                 session_manager.cleanup_session(sessionid)
         except KeyError:
-            logger.debug(f"Session {sessionid} already cleaned up")
+            pass
         except Exception as e:
-            logger.warning(f"Error in connection state change handler: {e}")
+            pass
 
     player = HumanPlayer(session_manager.nerfreals[sessionid])
     audio_sender = pc.addTrack(player.audio)

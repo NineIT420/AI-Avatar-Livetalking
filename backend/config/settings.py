@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Settings:
-    """Application settings loaded from environment variables."""
 
     def __init__(self):
         self.fps: int = int(os.getenv('LIVETALKING_FPS', '25'))

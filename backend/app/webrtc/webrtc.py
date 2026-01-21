@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import threading
 import time
 from typing import Tuple, Dict, Optional, Set, Union
@@ -20,11 +19,6 @@ AUDIO_TIME_BASE = fractions.Fraction(1, SAMPLE_RATE)
 from aiortc import (
     MediaStreamTrack,
 )
-
-logging.basicConfig()
-logger = logging.getLogger(__name__)
-from app.utils.logger import logger as mylogger
-
 
 class PlayerStreamTrack(MediaStreamTrack):
     def __init__(self, player, kind):
@@ -50,10 +44,6 @@ class PlayerStreamTrack(MediaStreamTrack):
             self._start = self._player.get_shared_start_time()
             self._timestamp = 0
             self.timelist.append(self._start)
-            if self.kind == 'video':
-                mylogger.info('video start (shared):%f',self._start)
-            else:
-                mylogger.info('audio start (shared):%f',self._start)
 
         if self.kind == 'video':
             self._timestamp += int(VIDEO_PTIME * VIDEO_CLOCK_RATE)
@@ -62,7 +52,7 @@ class PlayerStreamTrack(MediaStreamTrack):
             if wait>0:
                 await asyncio.sleep(wait)
             return self._timestamp, VIDEO_TIME_BASE
-        else: #audio
+        else:
             self._timestamp += int(AUDIO_PTIME * SAMPLE_RATE)
             self.current_frame_count += 1
             wait = self._start + self.current_frame_count * AUDIO_PTIME - time.time()
@@ -86,7 +76,6 @@ class PlayerStreamTrack(MediaStreamTrack):
             self.framecount += 1
             self.lasttime = time.perf_counter()
             if self.framecount==100:
-                mylogger.info(f"------actual avg final fps:{self.framecount/self.totaltime:.4f}")
                 self.framecount = 0
                 self.totaltime=0
         return frame
@@ -108,11 +97,8 @@ def player_worker_thread(
     video_track
 ):
     try:
-        mylogger.info("Starting render thread for lip-syncing")
         container.render(quit_event,loop,audio_track,video_track)
-        mylogger.info("Render thread stopped")
     except Exception as e:
-        mylogger.exception(f"Error in render thread: {e}")
         raise
 
 class HumanPlayer:
@@ -140,7 +126,6 @@ class HumanPlayer:
         with self.__start_time_lock:
             if self.__shared_start_time is None:
                 self.__shared_start_time = time.time()
-                mylogger.info('Shared start time initialized: %f', self.__shared_start_time)
             return self.__shared_start_time
 
     def notify(self,eventpoint):
@@ -157,7 +142,6 @@ class HumanPlayer:
 
     def start_render(self, loop):
         if self.__thread is None:
-            mylogger.info("Starting worker thread for lip-syncing render")
             self.__thread_quit = threading.Event()
             self.__loop = loop
             self.__thread = threading.Thread(
@@ -172,7 +156,6 @@ class HumanPlayer:
                 ),
             )
             self.__thread.start()
-            mylogger.info("Worker thread started successfully")
 
     def _start(self, track: PlayerStreamTrack) -> None:
         self.__started.add(track)
@@ -187,7 +170,6 @@ class HumanPlayer:
         self.__started.discard(track)
 
         if not self.__started and self.__thread is not None:
-            self.__log_debug("Stopping worker thread")
             self.__thread_quit.set()
             self.__thread.join()
             self.__thread = None
@@ -195,5 +177,3 @@ class HumanPlayer:
         if not self.__started and self.__container is not None:
             self.__container = None
 
-    def __log_debug(self, msg: str, *args) -> None:
-        mylogger.debug(f"HumanPlayer {msg}", *args)

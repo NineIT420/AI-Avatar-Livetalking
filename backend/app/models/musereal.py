@@ -27,7 +27,6 @@ from av import AudioFrame, VideoFrame
 from .basereal import BaseReal
 
 from tqdm import tqdm
-from ..utils.logger import logger
 
 def load_model():
     vae, unet, pe = load_all_model()
@@ -63,7 +62,6 @@ def load_avatar(avatar_id):
 
 @torch.no_grad()
 def warm_up(batch_size,model):
-    logger.info('warmup model...')
     vae, unet, pe, timesteps, audio_processor = model
     whisper_batch = np.ones((batch_size, 50, 384), dtype=np.uint8)
     latent_batch = torch.ones(batch_size, 8, 32, 32).to(unet.device)
@@ -79,14 +77,12 @@ def warm_up(batch_size,model):
 
 def read_imgs(img_list):
     frames = []
-    logger.info('reading images...')
     for img_path in tqdm(img_list):
         frame = cv2.imread(img_path)
         frames.append(frame)
     return frames
 
 def __mirror_index(size, index):
-    #size = len(self.coord_list_cycle)
     turn = index // size
     res = index % size
     if turn % 2 == 0:
@@ -102,7 +98,6 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
     index = 0
     count=0
     counttime=0
-    logger.info('start inference')
     while not quit_event.is_set():
         starttime=time.perf_counter()
         try:
@@ -143,13 +138,11 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
             counttime += (time.perf_counter() - t)
             count += batch_size
             if count>=100:
-                logger.info(f"------actual avg infer fps:{count/counttime:.4f}")
                 count=0
                 counttime=0
             for i,res_frame in enumerate(recon):
                 res_frame_queue.put((res_frame,__mirror_index(length,index),audio_frames[i*2:i*2+2]))
                 index = index + 1
-    logger.info('musereal inference processor stop')
 
 class MuseReal(BaseReal):
     @torch.no_grad()
@@ -188,7 +181,6 @@ class MuseReal(BaseReal):
             latent = self.input_latent_list_cycle[idx]
             latent_batch.append(latent)
         latent_batch = torch.cat(latent_batch, dim=0)
-        logger.info('infer=======')
         audio_feature_batch = torch.from_numpy(whisper_batch)
         audio_feature_batch = audio_feature_batch.to(device=self.unet.device,
                                                         dtype=self.unet.model.dtype)
@@ -214,11 +206,9 @@ class MuseReal(BaseReal):
         y2 = max(y1 + 1, min(int(y2), frame_h))
         
         if x2 <= x1 or y2 <= y1:
-            logger.warning(f"MuseTalk: Invalid bbox at idx {idx} after clamping: x1={x1}, x2={x2}, y1={y1}, y2={y2}, frame_shape={ori_frame.shape}, original_bbox={bbox}. Returning original frame.")
             return ori_frame
         
         if pred_frame is None or pred_frame.size == 0:
-            logger.warning(f"MuseTalk: Empty pred_frame at idx {idx}. Returning original frame.")
             return ori_frame
         
         try:
@@ -232,7 +222,6 @@ class MuseReal(BaseReal):
             combine_frame = get_image_blending(ori_frame, res_frame, validated_bbox, mask, mask_crop_box)
             return combine_frame
         except Exception as e:
-            logger.warning(f"MuseTalk: Error pasting frame at idx {idx}: {e}. bbox=({x1},{y1},{x2},{y2}), frame_shape={ori_frame.shape}, pred_shape={pred_frame.shape if pred_frame is not None else None}, original_bbox={bbox}")
             return ori_frame
             
     def render(self,quit_event,loop=None,audio_track=None,video_track=None):
@@ -255,9 +244,7 @@ class MuseReal(BaseReal):
             t = time.perf_counter()
             self.asr.run_step()
             if video_track and video_track._queue.qsize()>=1.5*self.opt.batch_size:
-                logger.debug('sleep qsize=%d',video_track._queue.qsize())
                 time.sleep(0.04*video_track._queue.qsize()*0.8)
-        logger.info('musereal thread stop')
 
         infer_quit_event.set()
         infer_thread.join()

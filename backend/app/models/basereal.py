@@ -21,12 +21,10 @@ from av import AudioFrame, VideoFrame
 import av
 from fractions import Fraction
 
-from ..utils.logger import logger
 
 from tqdm import tqdm
 def read_imgs(img_list):
-    frames = []
-    logger.info('reading images...') 
+    frames = []  
     for img_path in tqdm(img_list):
         frame = cv2.imread(img_path)
         frames.append(frame)
@@ -76,13 +74,10 @@ class BaseReal:
         if self.video_path and os.path.exists(self.video_path):
             self.video_cap = cv2.VideoCapture(self.video_path)
             if not self.video_cap.isOpened():
-                logger.warning(f"Failed to open video file: {self.video_path}")
                 self.video_cap = None
             else:
                 self.video_total_frames = int(self.video_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                logger.info(f"Video file loaded for silence streaming: {self.video_path} (total frames: {self.video_total_frames})")
-        elif self.video_path:
-            logger.warning(f"Video file not found: {self.video_path}")
+        
 
     def __del__(self):
         if hasattr(self, 'video_cap') and self.video_cap is not None:
@@ -115,19 +110,16 @@ class BaseReal:
                 streamlen -= self.chunk
                 idx += self.chunk
         except Exception as e:
-            logger.warning(f'Failed to decode streaming audio chunk {chunk_index}: {e}. Skipping chunk.')
+            pass
     
     def __create_bytes_stream(self,byte_stream):
         stream, sample_rate = sf.read(byte_stream)
-        logger.info(f'[INFO]put audio stream {sample_rate}: {stream.shape}')
         stream = stream.astype(np.float32)
 
         if stream.ndim > 1:
-            logger.info(f'[WARN] audio has {stream.shape[1]} channels, only use the first.')
             stream = stream[:, 0]
     
         if sample_rate != self.sample_rate and stream.shape[0]>0:
-            logger.info(f'[WARN] audio sample rate is {sample_rate}, resampling into {self.sample_rate}.')
             stream = resampy.resample(x=stream, sr_orig=sample_rate, sr_new=self.sample_rate)
 
         return stream
@@ -141,7 +133,6 @@ class BaseReal:
     
     def __loadcustom(self):
         for item in self.opt.customopt:
-            logger.info(item)
             input_img_list = glob.glob(os.path.join(item['imgpath'], '*.[jpJP][pnPN]*[gG]'))
             input_img_list = sorted(input_img_list, key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
             self.custom_img_cycle[item['audiotype']] = read_imgs(input_img_list)
@@ -158,7 +149,7 @@ class BaseReal:
             self.custom_index[key]=0
 
     def notify(self,eventpoint):
-        logger.info("notify:%s",eventpoint)
+        pass
 
     def start_recording(self):
         if self.recording:
@@ -201,10 +192,8 @@ class BaseReal:
         if self.recording and self._record_audio_pipe is not None:
             try:
                 if not isinstance(frame, np.ndarray):
-                    logger.warning(f"Audio frame is not a numpy array: {type(frame)}")
                     return
                 if frame.size == 0:
-                    logger.warning("Audio frame is empty")
                     return
                 if frame.dtype != np.int16:
                     frame = frame.astype(np.int16)
@@ -212,51 +201,9 @@ class BaseReal:
                 self._record_audio_pipe.stdin.write(data)
                 self._record_audio_pipe.stdin.flush()
             except (BrokenPipeError, OSError) as e:
-                logger.warning(f"Error writing audio to pipe: {e}")
                 self.recording = False
             except Exception as e:
-                logger.warning(f"Unexpected error writing audio: {e}")
                 self.recording = False
-    
-    # def record_frame(self): 
-    #     videostream = self.container.add_stream("libx264", rate=25)
-    #     videostream.codec_context.time_base = Fraction(1, 25)
-    #     audiostream = self.container.add_stream("aac")
-    #     audiostream.codec_context.time_base = Fraction(1, 16000)
-    #     init = True
-    #     framenum = 0       
-    #     while self.recording:
-    #         try:
-    #             videoframe = self.recordq_video.get(block=True, timeout=1)
-    #             videoframe.pts = framenum #int(round(framenum*0.04 / videostream.codec_context.time_base))
-    #             videoframe.dts = videoframe.pts
-    #             if init:
-    #                 videostream.width = videoframe.width
-    #                 videostream.height = videoframe.height
-    #                 init = False
-    #             for packet in videostream.encode(videoframe):
-    #                 self.container.mux(packet)
-    #             for k in range(2):
-    #                 audioframe = self.recordq_audio.get(block=True, timeout=1)
-    #                 audioframe.pts = int(round((framenum*2+k)*0.02 / audiostream.codec_context.time_base))
-    #                 audioframe.dts = audioframe.pts
-    #                 for packet in audiostream.encode(audioframe):
-    #                     self.container.mux(packet)
-    #             framenum += 1
-    #         except queue.Empty:
-    #             print('record queue empty,')
-    #             continue
-    #         except Exception as e:
-    #             print(e)
-    #             #break
-    #     for packet in videostream.encode(None):
-    #         self.container.mux(packet)
-    #     for packet in audiostream.encode(None):
-    #         self.container.mux(packet)
-    #     self.container.close()
-    #     self.recordq_video.queue.clear()
-    #     self.recordq_audio.queue.clear()
-    #     print('record thread stop')
 		
     def stop_recording(self):
         if not self.recording:
@@ -269,34 +216,30 @@ class BaseReal:
                 self._record_video_pipe.stdin.close()
                 self._record_video_pipe.wait()
         except Exception as e:
-            logger.warning(f"Error closing video pipe: {e}")
+            pass
         
         try:
             self._record_audio_pipe.stdin.flush()
             self._record_audio_pipe.stdin.close()
             self._record_audio_pipe.wait()
         except Exception as e:
-            logger.warning(f"Error closing audio pipe: {e}")
+            pass
         
         audio_file = f'temp{self.opt.sessionid}.aac'
         video_file = f'temp{self.opt.sessionid}.mp4'
         output_file = 'data/record.mp4'
         
         if not os.path.exists(audio_file):
-            logger.error(f"Audio file not found: {audio_file}")
             return
         if not os.path.exists(video_file):
-            logger.error(f"Video file not found: {video_file}")
             return
         
         audio_file_size = os.path.getsize(audio_file) if os.path.exists(audio_file) else 0
         if audio_file_size == 0:
-            logger.warning(f"Audio file is empty: {audio_file}. Will generate silent audio track.")
             try:
                 probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', video_file]
                 result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
                 video_duration = float(result.stdout.strip())
-                logger.info(f"Video duration: {video_duration} seconds")
                 
                 silent_audio_file = f'temp{self.opt.sessionid}_silent.aac'
                 silent_cmd = [
@@ -309,12 +252,10 @@ class BaseReal:
                 ]
                 subprocess.run(silent_cmd, capture_output=True, text=True, check=True)
                 audio_file = silent_audio_file
-                logger.info(f"Generated silent audio track: {audio_file}")
             except Exception as e:
-                logger.error(f"Failed to generate silent audio: {e}")
+                pass
                 
         if os.path.getsize(video_file) == 0:
-            logger.error(f"Video file is empty: {video_file}")
             return
         
         os.makedirs('data', exist_ok=True)
@@ -334,10 +275,7 @@ class BaseReal:
         
         try:
             result = subprocess.run(cmd_combine, capture_output=True, text=True, check=True)
-            logger.info(f"Recording saved to {output_file}")
         except subprocess.CalledProcessError as e:
-            logger.error(f"FFmpeg combine failed: {e.stderr}")
-            logger.error(f"Command: {' '.join(cmd_combine)}")
             cmd_combine_fallback = [
                 'ffmpeg', '-y',
                 '-i', video_file,
@@ -350,10 +288,7 @@ class BaseReal:
             ]
             try:
                 result = subprocess.run(cmd_combine_fallback, capture_output=True, text=True, check=True)
-                logger.info(f"Recording saved to {output_file} (using fallback command)")
             except subprocess.CalledProcessError as e2:
-                logger.error(f"FFmpeg fallback also failed: {e2.stderr}")
-                logger.warning("Attempting to save video without audio")
                 cmd_video_only = [
                     'ffmpeg', '-y',
                     '-i', video_file,
@@ -362,11 +297,10 @@ class BaseReal:
                 ]
                 try:
                     result = subprocess.run(cmd_video_only, capture_output=True, text=True, check=True)
-                    logger.warning(f"Recording saved to {output_file} (video only, no audio)")
                 except subprocess.CalledProcessError as e3:
-                    logger.error(f"Failed to save video: {e3.stderr}")
+                    pass
         except Exception as e:
-            logger.error(f"Error combining audio/video: {e}")
+            pass
 
     def mirror_index(self,size, index):
         turn = index // size
@@ -419,7 +353,6 @@ class BaseReal:
             if enable_transition:
                 current_speaking = not (audio_frames[0][1]!=0 and audio_frames[1][1]!=0)
                 if current_speaking != _last_speaking:
-                    logger.info(f"状态切换：{'说话' if _last_speaking else '静音'} → {'说话' if current_speaking else '静音'}")
                     _transition_start = time.time()
                 _last_speaking = current_speaking
 
@@ -433,7 +366,6 @@ class BaseReal:
                         self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                         ret, target_frame = self.video_cap.read()
                         if not ret:
-                            logger.warning("Failed to read frame from video, falling back to default")
                             if self.custom_index.get(audiotype) is not None:
                                 mirindex = self.mirror_index(len(self.custom_img_cycle[audiotype]),self.custom_index[audiotype])
                                 target_frame = self.custom_img_cycle[audiotype][mirindex]
@@ -462,7 +394,6 @@ class BaseReal:
                 try:
                     current_frame = self.paste_back_frame(res_frame,idx)
                 except Exception as e:
-                    logger.warning(f"paste_back_frame error: {e}")
                     continue
                 if enable_transition:
                     if time.time() - _transition_start < _transition_duration and _last_silent_frame is not None:
@@ -502,6 +433,5 @@ class BaseReal:
         if self.opt.transport=='virtualcam':
             audio_thread.join()
             vircam.close()
-        logger.info('basereal process_frames thread stop') 
     
         
