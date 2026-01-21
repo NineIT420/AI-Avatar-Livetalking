@@ -1,20 +1,3 @@
-###############################################################################
-#  Copyright (C) 2024 LiveTalking@lipku https://github.com/lipku/LiveTalking
-#  email: lipku@foxmail.com
-# 
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#  
-#       http://www.apache.org/licenses/LICENSE-2.0
-# 
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-###############################################################################
-
 import math
 import torch
 import numpy as np
@@ -38,7 +21,7 @@ from av import AudioFrame, VideoFrame
 import av
 from fractions import Fraction
 
-from logger import logger
+from ..utils.logger import logger
 
 from tqdm import tqdm
 def read_imgs(img_list):
@@ -60,8 +43,6 @@ def play_audio(quit_event,queue):
         output_device_index=1,
     )
     stream.start_stream()
-    # while queue.qsize() <= 0:
-    #     time.sleep(0.1)
     while not quit_event.is_set():
         stream.write(queue.get(block=True))
     stream.close()
@@ -70,7 +51,7 @@ class BaseReal:
     def __init__(self, opt):
         self.opt = opt
         self.sample_rate = 16000
-        self.chunk = self.sample_rate // opt.fps # 320 samples per chunk (20ms * 16000 / 1000)
+        self.chunk = self.sample_rate // opt.fps
         self.sessionid = self.opt.sessionid
 
         self.speaking = False
@@ -88,7 +69,6 @@ class BaseReal:
         self.custom_opt = {}
         self.__loadcustom()
         
-        # Initialize video capture for streaming when no voice is input
         self.video_cap = None
         self.video_path = os.path.expanduser(getattr(opt, 'video', ''))
         self.video_frame_index = 0
@@ -105,7 +85,6 @@ class BaseReal:
             logger.warning(f"Video file not found: {self.video_path}")
 
     def __del__(self):
-        """Cleanup video capture on destruction"""
         if hasattr(self, 'video_cap') and self.video_cap is not None:
             self.video_cap.release()
 
@@ -126,25 +105,20 @@ class BaseReal:
             idx += self.chunk
 
     def put_audio_chunk(self,filebyte,chunk_index:int,datainfo:dict={}):
-        """Handle streaming audio chunks from frontend (typically 100ms chunks)"""
         try:
             input_stream = BytesIO(filebyte)
             stream = self.__create_bytes_stream(input_stream)
             streamlen = stream.shape[0]
             idx=0
-            # Process the chunk in standard 20ms frames (self.chunk size)
             while streamlen >= self.chunk:
                 self.put_audio_frame(stream[idx:idx+self.chunk],datainfo)
                 streamlen -= self.chunk
                 idx += self.chunk
         except Exception as e:
             logger.warning(f'Failed to decode streaming audio chunk {chunk_index}: {e}. Skipping chunk.')
-            # For compressed formats that can't be decoded, we skip the chunk
-            # The ASR system will handle missing chunks gracefully
     
     def __create_bytes_stream(self,byte_stream):
-        #byte_stream=BytesIO(buffer)
-        stream, sample_rate = sf.read(byte_stream) # [T*sample_rate,] float64
+        stream, sample_rate = sf.read(byte_stream)
         logger.info(f'[INFO]put audio stream {sample_rate}: {stream.shape}')
         stream = stream.astype(np.float32)
 
@@ -187,50 +161,37 @@ class BaseReal:
         logger.info("notify:%s",eventpoint)
 
     def start_recording(self):
-        """开始录制视频"""
         if self.recording:
             return
 
-        # Initialize audio pipe immediately (dimensions are known)
         acommand = ['ffmpeg',
                     '-y', '-vn',
                     '-f', 's16le',
-                    #'-acodec','pcm_s16le',
                     '-ac', '1',
                     '-ar', '16000',
                     '-i', '-',
                     '-acodec', 'aac',
-                    #'-f' , 'wav',
                     f'temp{self.opt.sessionid}.aac']
         self._record_audio_pipe = subprocess.Popen(acommand, shell=False, stdin=subprocess.PIPE)
 
         self.recording = True
-        # self.recordq_video.queue.clear()
-        # self.recordq_audio.queue.clear()
-        # self.container = av.open(path, mode="w")
-    
-        # process_thread = Thread(target=self.record_frame, args=())
-        # process_thread.start()
     
     def record_video_data(self,image):
         if self.width == 0:
-            print("image.shape:",image.shape)
             self.height,self.width,_ = image.shape
 
         if self.recording:
-            # Initialize video pipe on first frame with actual dimensions
             if self._record_video_pipe is None:
                 command = ['ffmpeg',
                           '-y', '-an',
                           '-f', 'rawvideo',
                           '-vcodec','rawvideo',
-                          '-pix_fmt', 'bgr24', #像素格式
+                          '-pix_fmt', 'bgr24',
                           '-s', "{}x{}".format(self.width, self.height),
                           '-r', str(25),
                           '-i', '-',
                           '-pix_fmt', 'yuv420p',
                           '-vcodec', "h264",
-                          #'-f' , 'flv',
                           f'temp{self.opt.sessionid}.mp4']
                 self._record_video_pipe = subprocess.Popen(command, shell=False, stdin=subprocess.PIPE)
 
@@ -239,14 +200,12 @@ class BaseReal:
     def record_audio_data(self,frame):
         if self.recording and self._record_audio_pipe is not None:
             try:
-                # Ensure frame is a numpy array with correct shape
                 if not isinstance(frame, np.ndarray):
                     logger.warning(f"Audio frame is not a numpy array: {type(frame)}")
                     return
                 if frame.size == 0:
                     logger.warning("Audio frame is empty")
                     return
-                # Ensure frame is int16
                 if frame.dtype != np.int16:
                     frame = frame.astype(np.int16)
                 data = frame.tobytes()
@@ -300,12 +259,10 @@ class BaseReal:
     #     print('record thread stop')
 		
     def stop_recording(self):
-        """停止录制视频"""
         if not self.recording:
             return
         self.recording = False 
         
-        # Flush and close video pipe
         try:
             if self._record_video_pipe is not None:
                 self._record_video_pipe.stdin.flush()
@@ -314,7 +271,6 @@ class BaseReal:
         except Exception as e:
             logger.warning(f"Error closing video pipe: {e}")
         
-        # Flush and close audio pipe
         try:
             self._record_audio_pipe.stdin.flush()
             self._record_audio_pipe.stdin.close()
@@ -322,7 +278,6 @@ class BaseReal:
         except Exception as e:
             logger.warning(f"Error closing audio pipe: {e}")
         
-        # Verify files exist before combining
         audio_file = f'temp{self.opt.sessionid}.aac'
         video_file = f'temp{self.opt.sessionid}.mp4'
         output_file = 'data/record.mp4'
@@ -334,18 +289,15 @@ class BaseReal:
             logger.error(f"Video file not found: {video_file}")
             return
         
-        # Check file sizes (ensure they're not empty)
         audio_file_size = os.path.getsize(audio_file) if os.path.exists(audio_file) else 0
         if audio_file_size == 0:
             logger.warning(f"Audio file is empty: {audio_file}. Will generate silent audio track.")
-            # Get video duration to generate matching silent audio
             try:
                 probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', video_file]
                 result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
                 video_duration = float(result.stdout.strip())
                 logger.info(f"Video duration: {video_duration} seconds")
                 
-                # Generate silent audio matching video duration
                 silent_audio_file = f'temp{self.opt.sessionid}_silent.aac'
                 silent_cmd = [
                     'ffmpeg', '-y', '-f', 'lavfi',
@@ -360,17 +312,13 @@ class BaseReal:
                 logger.info(f"Generated silent audio track: {audio_file}")
             except Exception as e:
                 logger.error(f"Failed to generate silent audio: {e}")
-                # Continue with original audio file anyway
                 
         if os.path.getsize(video_file) == 0:
             logger.error(f"Video file is empty: {video_file}")
             return
         
-        # Ensure data directory exists
         os.makedirs('data', exist_ok=True)
         
-        # Use subprocess with error checking (video first, then audio)
-        # Use -c:a aac to re-encode audio instead of copy, and add -shortest to sync lengths
         cmd_combine = [
             'ffmpeg', '-y',
             '-i', video_file,
@@ -390,7 +338,6 @@ class BaseReal:
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg combine failed: {e.stderr}")
             logger.error(f"Command: {' '.join(cmd_combine)}")
-            # Try fallback without explicit mapping
             cmd_combine_fallback = [
                 'ffmpeg', '-y',
                 '-i', video_file,
@@ -406,7 +353,6 @@ class BaseReal:
                 logger.info(f"Recording saved to {output_file} (using fallback command)")
             except subprocess.CalledProcessError as e2:
                 logger.error(f"FFmpeg fallback also failed: {e2.stderr}")
-                # Try one more time with just video (no audio)
                 logger.warning("Attempting to save video without audio")
                 cmd_video_only = [
                     'ffmpeg', '-y',
@@ -421,10 +367,8 @@ class BaseReal:
                     logger.error(f"Failed to save video: {e3.stderr}")
         except Exception as e:
             logger.error(f"Error combining audio/video: {e}")
-        #os.remove(output_path)
 
     def mirror_index(self,size, index):
-        #size = len(self.coord_list_cycle)
         turn = index // size
         res = index % size
         if turn % 2 == 0:
@@ -437,11 +381,10 @@ class BaseReal:
         stream = self.custom_audio_cycle[audiotype][idx:idx+self.chunk]
         self.custom_audio_index[audiotype] += self.chunk
         if self.custom_audio_index[audiotype]>=self.custom_audio_cycle[audiotype].shape[0]:
-            self.curr_state = 1  #当前视频不循环播放，切换到静音状态
+            self.curr_state = 1
         return stream
     
     def set_custom_state(self,audiotype, reinit=True):
-        print('set_custom_state:',audiotype)
         if self.custom_audio_index.get(audiotype) is None:
             return
         self.curr_state = audiotype
@@ -450,14 +393,14 @@ class BaseReal:
             self.custom_index[audiotype] = 0
             
     def process_frames(self,quit_event,loop=None,audio_track=None,video_track=None):
-        enable_transition = False  # 设置为False禁用过渡效果，True启用
+        enable_transition = False
         
         if enable_transition:
             _last_speaking = False
             _transition_start = time.time()
-            _transition_duration = 0.1  # 过渡时间
-            _last_silent_frame = None  # 静音帧缓存
-            _last_speaking_frame = None  # 说话帧缓存
+            _transition_duration = 0.1
+            _last_silent_frame = None
+            _last_speaking_frame = None
         
         if self.opt.transport=='virtualcam':
             import pyvirtualcam
@@ -474,35 +417,31 @@ class BaseReal:
                 continue
             
             if enable_transition:
-                # 检测状态变化
                 current_speaking = not (audio_frames[0][1]!=0 and audio_frames[1][1]!=0)
                 if current_speaking != _last_speaking:
                     logger.info(f"状态切换：{'说话' if _last_speaking else '静音'} → {'说话' if current_speaking else '静音'}")
                     _transition_start = time.time()
                 _last_speaking = current_speaking
 
-            if audio_frames[0][1]!=0 and audio_frames[1][1]!=0: #全为静音数据，只需要取fullimg
+            if audio_frames[0][1]!=0 and audio_frames[1][1]!=0:
                 self.speaking = False
                 audiotype = audio_frames[0][1]
                 
-                # Check if video file is available for streaming
                 if self.video_cap is not None and self.video_cap.isOpened():
-                    # Read frame from video file
                     ret, target_frame = self.video_cap.read()
                     if not ret:
-                        # Video ended, loop back to beginning
                         self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                         ret, target_frame = self.video_cap.read()
                         if not ret:
                             logger.warning("Failed to read frame from video, falling back to default")
-                            if self.custom_index.get(audiotype) is not None: #有自定义视频
+                            if self.custom_index.get(audiotype) is not None:
                                 mirindex = self.mirror_index(len(self.custom_img_cycle[audiotype]),self.custom_index[audiotype])
                                 target_frame = self.custom_img_cycle[audiotype][mirindex]
                                 self.custom_index[audiotype] += 1
                             else:
                                 target_frame = self.frame_list_cycle[idx]
                     self.video_frame_index += 1
-                elif self.custom_index.get(audiotype) is not None: #有自定义视频
+                elif self.custom_index.get(audiotype) is not None:
                     mirindex = self.mirror_index(len(self.custom_img_cycle[audiotype]),self.custom_index[audiotype])
                     target_frame = self.custom_img_cycle[audiotype][mirindex]
                     self.custom_index[audiotype] += 1
@@ -510,13 +449,11 @@ class BaseReal:
                     target_frame = self.frame_list_cycle[idx]
                 
                 if enable_transition:
-                    # 说话→静音过渡
                     if time.time() - _transition_start < _transition_duration and _last_speaking_frame is not None:
                         alpha = min(1.0, (time.time() - _transition_start) / _transition_duration)
                         combine_frame = cv2.addWeighted(_last_speaking_frame, 1-alpha, target_frame, alpha, 0)
                     else:
                         combine_frame = target_frame
-                    # 缓存静音帧
                     _last_silent_frame = combine_frame.copy()
                 else:
                     combine_frame = target_frame
@@ -528,13 +465,11 @@ class BaseReal:
                     logger.warning(f"paste_back_frame error: {e}")
                     continue
                 if enable_transition:
-                    # 静音→说话过渡
                     if time.time() - _transition_start < _transition_duration and _last_silent_frame is not None:
                         alpha = min(1.0, (time.time() - _transition_start) / _transition_duration)
                         combine_frame = cv2.addWeighted(_last_silent_frame, 1-alpha, current_frame, alpha, 0)
                     else:
                         combine_frame = current_frame
-                    # 缓存说话帧
                     _last_speaking_frame = combine_frame.copy()
                 else:
                     combine_frame = current_frame
@@ -544,7 +479,7 @@ class BaseReal:
                     height, width,_= combine_frame.shape
                     vircam = pyvirtualcam.Camera(width=width, height=height, fps=25, fmt=pyvirtualcam.PixelFormat.BGR,print_fps=True)
                 vircam.send(combine_frame)
-            else: #webrtc
+            else:
                 image = combine_frame
                 new_frame = VideoFrame.from_ndarray(image, format="bgr24")
                 asyncio.run_coroutine_threadsafe(video_track._queue.put((new_frame,None)), loop)
@@ -555,8 +490,8 @@ class BaseReal:
                 frame = (frame * 32767).astype(np.int16)
 
                 if self.opt.transport=='virtualcam':
-                    audio_tmp.put(frame.tobytes()) #TODO
-                else: #webrtc
+                    audio_tmp.put(frame.tobytes())
+                else:
                     new_frame = AudioFrame(format='s16', layout='mono', samples=frame.shape[0])
                     new_frame.planes[0].update(frame.tobytes())
                     new_frame.sample_rate=16000
@@ -568,13 +503,5 @@ class BaseReal:
             audio_thread.join()
             vircam.close()
         logger.info('basereal process_frames thread stop') 
-    
-    # def process_custom(self,audiotype:int,idx:int):
-    #     if self.curr_state!=audiotype: #从推理切到口播
-    #         if idx in self.switch_pos:  #在卡点位置可以切换
-    #             self.curr_state=audiotype
-    #             self.custom_index=0
-    #     else:
-    #         self.custom_index+=1    
     
         
