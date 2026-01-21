@@ -29,7 +29,7 @@ from threading import Thread,Event
 #import multiprocessing
 import torch.multiprocessing as mp
 
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, Response, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -359,6 +359,44 @@ async def is_speaking(request: Request):
             content={"code": -1, "msg": str(e)}
         )
 
+async def audio_websocket(websocket: WebSocket, sessionid: int = 0):
+    await websocket.accept()
+
+    try:
+        # Get sessionid from query parameters if not provided
+        if sessionid == 0:
+            sessionid = int(websocket.query_params.get('sessionid', 0))
+
+        logger.info(f"WebSocket connection established for session {sessionid}")
+
+        if sessionid not in nerfreals or nerfreals[sessionid] is None:
+            await websocket.send_json({"code": -1, "msg": f"Session {sessionid} not found"})
+            await websocket.close()
+            return
+
+        while True:
+            try:
+                # Receive binary audio data
+                audio_data = await websocket.receive_bytes()
+
+                # Process the audio data
+                nerfreals[sessionid].put_audio_file(audio_data)
+
+                # Send acknowledgment
+                await websocket.send_json({"code": 0, "msg": "ok"})
+
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket disconnected for session {sessionid}")
+                break
+            except Exception as e:
+                logger.error(f"Error processing WebSocket audio data for session {sessionid}: {e}")
+                await websocket.send_json({"code": -1, "msg": str(e)})
+
+    except Exception as e:
+        logger.error(f"WebSocket error for session {sessionid}: {e}")
+    finally:
+        logger.info(f"WebSocket connection closed for session {sessionid}")
+
 def create_app():
     global fastapi_app, _initialized, opt, model, avatar
 
@@ -383,6 +421,7 @@ def create_app():
         fastapi_app.post("/record")(record)
         fastapi_app.post("/interrupt_talk")(interrupt_talk)
         fastapi_app.post("/is_speaking")(is_speaking)
+        fastapi_app.websocket("/ws/audio")(audio_websocket)
 
     # Initialize models and configuration if not already done
     if not _initialized:

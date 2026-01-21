@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { startRecording, stopRecording, streamAudioChunk } from '@/services/api';
+import { startRecording, stopRecording, streamAudioChunk, connectAudioWebSocket, disconnectAudioWebSocket } from '@/services/api';
 import { config } from '@/utils/config';
 import type { UseRecordingReturn } from '@/types';
 
@@ -17,6 +17,9 @@ export function useRecording(): UseRecordingReturn {
 
       // Start server-side recording
       await startRecording(sessionId);
+
+      // Connect to audio WebSocket for streaming
+      await connectAudioWebSocket(sessionId);
 
       // Start microphone audio recording with Web Audio API
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -111,6 +114,9 @@ export function useRecording(): UseRecordingReturn {
 
         // Stop server-side recording
         await stopRecording(sessionId);
+
+        // Disconnect audio WebSocket
+        disconnectAudioWebSocket();
 
         // Disconnect and clean up Web Audio API
         if (workletNodeRef.current) {
