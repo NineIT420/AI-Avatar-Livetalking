@@ -24,3 +24,4 @@ musetalk/
 data/*
 *.log
 dist
+.env
