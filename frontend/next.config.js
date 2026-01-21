@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // If your backend is on a different port/domain, configure rewrites
   async rewrites() {
     return [
       {
