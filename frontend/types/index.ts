@@ -1,4 +1,3 @@
-// Connection and session types
 export interface SessionInfo {
   sessionid: number;
 }
@@ -21,7 +20,6 @@ export interface HumanAudioResponse {
   msg?: string;
 }
 
-// WebRTC types
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'failed';
 
 export interface WebRTCConfig {
@@ -32,7 +30,6 @@ export interface WebRTCConfig {
   sessionId: number | null;
 }
 
-// Audio types
 export interface AudioConfig {
   sampleRate: number;
   channelCount: number;
@@ -44,7 +41,6 @@ export interface AudioChunk {
   data: Float32Array;
 }
 
-// API types
 export interface ApiConfig {
   baseUrl: string;
 }
@@ -58,7 +54,6 @@ export interface WebRTCIceConfig {
   };
 }
 
-// Component prop types
 export interface VideoPlayerProps {
   videoRef: React.RefObject<HTMLVideoElement>;
   audioRef: React.RefObject<HTMLAudioElement>;
@@ -77,7 +72,6 @@ export interface ControlsProps {
   isLoading?: boolean;
 }
 
-// Hook return types
 export interface UseWebRTCReturn extends WebRTCConfig {
   start: (useStun: boolean) => Promise<void>;
   stop: () => void;

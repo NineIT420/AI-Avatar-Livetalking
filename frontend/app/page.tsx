@@ -20,13 +20,11 @@ export default function Home() {
         try {
           await startRecord(sessionId);
         } catch (error) {
-          console.error('Failed to start recording:', error);
         }
       } else if (sessionId === null && isRecording) {
         try {
           await stopRecord(sessionId!);
         } catch (error) {
-          console.error('Failed to stop recording:', error);
         }
       }
     };
@@ -39,7 +37,6 @@ export default function Home() {
       () => start(true), 
       undefined, 
       (error) => {
-        console.error('Failed to start WebRTC:', error);
         alert('Failed to start connection. Please check your browser permissions and try again.');
       }
     );
@@ -50,7 +47,6 @@ export default function Home() {
       () => Promise.resolve(stop()),
       undefined, 
       (error) => {
-        console.error('Failed to stop WebRTC:', error);
         stop();
       }
     );
