@@ -3,7 +3,6 @@ import unicodedata
 
 import regex
 
-# non-ASCII letters that are not separated by "NFKD" normalization
 ADDITIONAL_DIACRITICS = {
     "œ": "oe",
     "Œ": "OE",
@@ -25,10 +24,6 @@ ADDITIONAL_DIACRITICS = {
 
 
 def remove_symbols_and_diacritics(s: str, keep=""):
-    """
-    Replace any other markers, symbols, and punctuations with a space,
-    and drop any diacritics (category 'Mn' and some manual mappings)
-    """
     return "".join(
         c
         if c in keep
@@ -44,9 +39,6 @@ def remove_symbols_and_diacritics(s: str, keep=""):
 
 
 def remove_symbols(s: str):
-    """
-    Replace any other markers, symbols, punctuations with a space, keeping diacritics
-    """
     return "".join(
         " " if unicodedata.category(c)[0] in "MSP" else c for c in unicodedata.normalize("NFKC", s)
     )
@@ -59,13 +51,13 @@ class BasicTextNormalizer:
 
     def __call__(self, s: str):
         s = s.lower()
-        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)  # remove words between brackets
-        s = re.sub(r"\(([^)]+?)\)", "", s)  # remove words between parenthesis
+        s = re.sub(r"[<\[][^>\]]*[>\]]", "", s)
+        s = re.sub(r"\(([^)]+?)\)", "", s)
         s = self.clean(s).lower()
 
         if self.split_letters:
             s = " ".join(regex.findall(r"\X", s, regex.U))
 
-        s = re.sub(r"\s+", " ", s)  # replace any successive whitespace characters with a space
+        s = re.sub(r"\s+", " ", s)
 
         return s

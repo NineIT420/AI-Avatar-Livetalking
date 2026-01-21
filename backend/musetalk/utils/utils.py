@@ -66,7 +66,6 @@ def datagen(
             yield whisper_batch, latent_batch
             whisper_batch, latent_batch  = [], []
 
-    # the last batch may smaller than batch size
     if len(latent_batch) > 0:
         whisper_batch = torch.stack(whisper_batch)
         latent_batch = torch.cat(latent_batch, dim=0)
@@ -81,7 +80,6 @@ def cast_training_params(
         model = [model]
     for m in model:
         for param in m.parameters():
-            # only upcast trainable parameters into fp32
             if param.requires_grad:
                 param.data = param.to(dtype)
 
@@ -93,22 +91,17 @@ def rand_log_normal(
     dtype=torch.float32,
     generator=None
 ):
-    """Draws samples from an lognormal distribution."""
     rnd_normal = torch.randn(
         shape, device=device, dtype=dtype, generator=generator)  # N(0, I)
     sigma = (rnd_normal * scale + loc).exp()
     return sigma
 
 def get_mouth_region(frames, image_pred, pixel_values_face_mask):
-    # Initialize lists to store the results for each image in the batch
     mouth_real_list = []
     mouth_generated_list = []
 
-    # Process each image in the batch
     for b in range(frames.shape[0]):
-        # Find the non-zero area in the face mask
         non_zero_indices = torch.nonzero(pixel_values_face_mask[b])
-        # If there are no non-zero indices, skip this image
         if non_zero_indices.numel() == 0:
             continue
 
@@ -117,20 +110,16 @@ def get_mouth_region(frames, image_pred, pixel_values_face_mask):
         min_x, max_x = torch.min(non_zero_indices[:, 2]), torch.max(
             non_zero_indices[:, 2])
 
-        # Crop the frames and image_pred according to the non-zero area
         frames_cropped = frames[b, :, min_y:max_y, min_x:max_x]
         image_pred_cropped = image_pred[b, :, min_y:max_y, min_x:max_x]
-        # Resize the cropped images to 256*256
         frames_resized = F.interpolate(frames_cropped.unsqueeze(
             0), size=(256, 256), mode='bilinear', align_corners=False)
         image_pred_resized = F.interpolate(image_pred_cropped.unsqueeze(
             0), size=(256, 256), mode='bilinear', align_corners=False)
 
-        # Append the resized images to the result lists
         mouth_real_list.append(frames_resized)
         mouth_generated_list.append(image_pred_resized)
 
-    # Convert the lists to tensors if they are not empty
     mouth_real = torch.cat(mouth_real_list, dim=0) if mouth_real_list else None
     mouth_generated = torch.cat(
         mouth_generated_list, dim=0) if mouth_generated_list else None
@@ -277,25 +266,21 @@ def process_and_save_images(
     num_images_to_keep=10,
     syncnet_score=1
 ):
-    # Rearrange the tensors
     print("image_pred.shape: ", image_pred.shape)
     pixel_values_ref_img = rearrange(batch['pixel_values_ref_img'], "b f c h w -> (b f) c h w")
     pixel_values = rearrange(batch["pixel_values_vid"], 'b f c h w -> (b f) c h w')
     
-    # Create masked pixel values
     masked_pixel_values = batch["pixel_values_vid"].clone()
     _, _, _, h, _ = batch["pixel_values_vid"].shape
     masked_pixel_values[:, :, :, h//2:, :] = -1
     masked_pixel_values = rearrange(masked_pixel_values, 'b f c h w -> (b f) c h w')
     
-    # Keep only the specified number of images
     pixel_values = pixel_values[:num_images_to_keep, :, :, :]
     masked_pixel_values = masked_pixel_values[:num_images_to_keep, :, :, :]
     pixel_values_ref_img = pixel_values_ref_img[:num_images_to_keep, :, :, :]
     image_pred = image_pred.detach()[:num_images_to_keep, :, :, :]
     image_pred_infer = image_pred_infer.detach()[:num_images_to_keep, :, :, :]
     
-    # Concatenate images
     concat = torch.cat([
         masked_pixel_values * 0.5 + 0.5, 
         pixel_values_ref_img * 0.5 + 0.5,
@@ -305,14 +290,10 @@ def process_and_save_images(
     ], dim=2)
     print("concat.shape: ", concat.shape)
     
-    # Create the save directory if it doesn't exist
     os.makedirs(f'{save_dir}/samples/', exist_ok=True)
 
-    # Try to save the concatenated image
     try:
-        # Concatenate images horizontally and convert to numpy array
         final_image = torch.cat([concat[i] for i in range(concat.shape[0])], dim=-1).permute(1, 2, 0).cpu().numpy()[:, :, [2, 1, 0]] * 255
-        # Save the image
         cv2.imwrite(f'{save_dir}/samples/sample_{global_step}_{accelerator.device}_SyncNetScore_{syncnet_score}.jpg', final_image)
         print(f"Image saved successfully: {save_dir}/samples/sample_{global_step}_{accelerator.device}_SyncNetScore_{syncnet_score}.jpg")
     except Exception as e:

@@ -16,6 +16,29 @@ Before setting up the project, ensure you have the following installed:
 - **OpenSSL** (for HTTPS certificates)
 - **Git**
 
+## Environment Requirements
+
+### Hardware Requirements
+
+- **RAM**: Minimum 8GB, recommended 16GB or more for optimal performance
+- **GPU**: NVIDIA GPU with CUDA support (recommended for AI inference acceleration)
+  - Minimum: GTX 1060 or equivalent
+  - Recommended: RTX 3060 or higher
+- **Storage**: Minimum 10GB free disk space
+- **Network**: Stable internet connection (required for WebRTC streaming and model downloads)
+
+### Software Requirements
+
+- **Operating System**: Linux (Ubuntu 18.04+), macOS (10.15+), or Windows 10+
+- **CUDA**: Version 11.0+ (if using GPU acceleration)
+- **WebRTC-compatible browser**: Chrome 88+, Firefox 85+, Safari 14+, or Edge 88+
+
+### Performance Notes
+
+- GPU acceleration significantly improves avatar rendering performance
+- CPU-only mode is supported but may result in lower frame rates
+- Real-time video processing requires consistent CPU/GPU performance
+
 ## Project Structure
 
 ```
@@ -81,6 +104,69 @@ LIVETALKING_MODEL=musetalk
 cd frontend
 npm install
 ```
+
+### 4. Model Downloads
+
+The LiveTalking backend requires several AI models to function. These models are not included in the repository and must be downloaded separately. Run the following commands from the `backend` directory:
+
+```bash
+cd backend
+mkdir -p models
+
+# Download MuseTalk models (main avatar generation model)
+mkdir -p models/musetalkV15
+# Download from: https://github.com/TMElyralab/MuseTalk
+# Required files: unet.pth, musetalk.json
+
+# Download Stable Diffusion VAE
+mkdir -p models/sd-vae
+# Download from: https://huggingface.co/stabilityai/sd-vae-ft-mse
+
+# Download Whisper model (for audio processing)
+mkdir -p models/whisper
+# Choose one of the following Whisper models:
+# Tiny (fastest, ~39MB): wget https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt
+# Small (balanced, ~244MB): wget https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794/small.pt
+# Medium (accurate, ~776MB): wget https://openaipublic.azureedge.net/main/whisper/models/345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1/medium.pt
+
+# Download VQ-VAE model
+# Download vqvae.pth to models/ directory
+```
+
+**Automated Download Script (Recommended):**
+
+Create a download script for convenience:
+
+```bash
+#!/bin/bash
+cd backend/models
+
+# Download MuseTalk models
+echo "Downloading MuseTalk models..."
+# Visit https://github.com/TMElyralab/MuseTalk and download manually to musetalkV15/
+
+# Download SD-VAE
+echo "Downloading Stable Diffusion VAE..."
+wget -O sd-vae/config.json https://huggingface.co/stabilityai/sd-vae-ft-mse/raw/main/config.json
+wget -O sd-vae/diffusion_pytorch_model.bin https://huggingface.co/stabilityai/sd-vae-ft-mse/resolve/main/diffusion_pytorch_model.bin
+
+# Download Whisper (choose size)
+echo "Downloading Whisper model (small)..."
+wget -P whisper/ https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794/small.pt
+
+# Download VQ-VAE
+echo "Downloading VQ-VAE model..."
+# Download from appropriate source to vqvae.pth
+
+echo "Model download complete!"
+```
+
+**Model Sources:**
+- **MuseTalk models**: [Official MuseTalk repository](https://github.com/TMElyralab/MuseTalk) - Download from releases or model zoo
+- **Whisper models**: [OpenAI Whisper](https://github.com/openai/whisper) - Direct download links above
+- **Stable Diffusion VAE**: [Hugging Face](https://huggingface.co/stabilityai/sd-vae-ft-mse)
+
+**Note**: Some models may require you to agree to terms of service. The total download size is approximately 1-2GB depending on model choices. Whisper models are downloaded automatically on first use if not present.
 
 ## Running the Application
 

@@ -20,7 +20,6 @@ models/musetalkV15/
 models/sd-vae/
 models/whisper/
 models/vqvae.pth
-musetalk/
 data/*
 *.log
 dist

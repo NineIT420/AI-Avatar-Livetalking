@@ -29,48 +29,6 @@ def transcribe(
         force_extraction: bool = False,
         **decode_options,
 ):
-    """
-    Transcribe an audio file using Whisper
-
-    Parameters
-    ----------
-    model: Whisper
-        The Whisper model instance
-
-    audio: Union[str, np.ndarray, torch.Tensor]
-        The path to the audio file to open, or the audio waveform
-
-    verbose: bool
-        Whether to display the text being decoded to the console. If True, displays all the details,
-        If False, displays minimal details. If None, does not display anything
-
-    temperature: Union[float, Tuple[float, ...]]
-        Temperature for sampling. It can be a tuple of temperatures, which will be successfully used
-        upon failures according to either `compression_ratio_threshold` or `logprob_threshold`.
-
-    compression_ratio_threshold: float
-        If the gzip compression ratio is above this value, treat as failed
-
-    logprob_threshold: float
-        If the average log probability over sampled tokens is below this value, treat as failed
-
-    no_speech_threshold: float
-        If the no_speech probability is higher than this value AND the average log probability
-        over sampled tokens is below `logprob_threshold`, consider the segment as silent
-
-    condition_on_previous_text: bool
-        if True, the previous output of the model is provided as a prompt for the next window;
-        disabling may make the text inconsistent across windows, but the model becomes less prone to
-        getting stuck in a failure loop, such as repetition looping or timestamps going out of sync.
-
-    decode_options: dict
-        Keyword arguments to construct `DecodingOptions` instances
-
-    Returns
-    -------
-    A dictionary containing the resulting text ("text") and segment-level details ("segments"), and
-    the spoken language ("language"), which is detected when `decode_options["language"]` is None.
-    """
     dtype = torch.float16 if decode_options.get("fp16", True) else torch.float32
     if model.device == torch.device("cpu"):
         if torch.cuda.is_available():
@@ -98,14 +56,12 @@ def transcribe(
                 "encoder_embeddings":encoder_embeddings,
             }
         )
-    # show the progress bar when verbose is False (otherwise the transcribed text will be printed)
     num_frames = mel.shape[-1]
     seek = 0
     previous_seek_value = seek
-    sample_skip = 3000 # 
+    sample_skip = 3000
     with tqdm.tqdm(total=num_frames, unit='frames', disable=verbose is not False) as pbar:
         while seek < num_frames:
-            # seek是开始的帧数
             end_seek = min(seek + sample_skip, num_frames)
             segment = pad_or_trim(mel[:,seek:seek+sample_skip], N_FRAMES).to(model.device).to(dtype)
             
@@ -117,12 +73,9 @@ def transcribe(
             audio_features, embeddings  = model.encoder(segment, include_embeddings = True)
             
             encoder_embeddings = embeddings
-            #print(f"encoder_embeddings shape {encoder_embeddings.shape}")
             add_segment(
                 start=seek,
                 end=end_seek,
-                #text_tokens=tokens,
-                #result=result,
                 encoder_embeddings=encoder_embeddings,
             )
             seek+=sample_skip
@@ -192,18 +145,14 @@ def cli():
 
         audio_basename = os.path.basename(audio_path)
 
-        # save TXT
         with open(os.path.join(output_dir, audio_basename + ".txt"), "w", encoding="utf-8") as txt:
             write_txt(result["segments"], file=txt)
 
-        # save VTT
         with open(os.path.join(output_dir, audio_basename + ".vtt"), "w", encoding="utf-8") as vtt:
             write_vtt(result["segments"], file=vtt)
 
-        # save SRT
         with open(os.path.join(output_dir, audio_basename + ".srt"), "w", encoding="utf-8") as srt:
             write_srt(result["segments"], file=srt)
-
 
 if __name__ == '__main__':
     cli()

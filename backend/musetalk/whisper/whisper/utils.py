@@ -61,22 +61,7 @@ def write_vtt(transcript: Iterator[dict], file: TextIO):
 
 
 def write_srt(transcript: Iterator[dict], file: TextIO):
-    """
-    Write a transcript to a file in SRT format.
-
-    Example usage:
-        from pathlib import Path
-        from whisper.utils import write_srt
-
-        result = transcribe(model, audio_path, temperature=temperature, **args)
-
-        # save SRT
-        audio_basename = Path(audio_path).stem
-        with open(Path(output_dir) / (audio_basename + ".srt"), "w", encoding="utf-8") as srt:
-            write_srt(result["segments"], file=srt)
-    """
     for i, segment in enumerate(transcript, start=1):
-        # write srt lines
         print(
             f"{i}\n"
             f"{format_timestamp(segment['start'], always_include_hours=True, decimal_marker=',')} --> "

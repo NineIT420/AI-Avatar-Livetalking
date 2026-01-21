@@ -128,7 +128,6 @@ TO_LANGUAGE_CODE = {
 
 @dataclass(frozen=True)
 class Tokenizer:
-    """A thin wrapper around `GPT2TokenizerFast` providing quick access to special tokens"""
 
     tokenizer: "GPT2TokenizerFast"
     language: Optional[str]
@@ -141,10 +140,6 @@ class Tokenizer:
         return self.tokenizer.decode(token_ids, **kwargs)
 
     def decode_with_timestamps(self, tokens) -> str:
-        """
-        Timestamp tokens are above the special tokens' id range and are ignored by `decode()`.
-        This method decodes given tokens with timestamps tokens annotated, e.g. "<|1.08|>".
-        """
         outputs = [[]]
         for token in tokens:
             if token >= self.timestamp_begin:
@@ -194,7 +189,6 @@ class Tokenizer:
     @property
     @lru_cache()
     def language_token(self) -> int:
-        """Returns the token id corresponding to the value of the `language` field"""
         if self.language is None:
             raise ValueError(f"This tokenizer does not have language token configured")
 
@@ -235,27 +229,12 @@ class Tokenizer:
     @property
     @lru_cache()
     def non_speech_tokens(self) -> Tuple[int]:
-        """
-        Returns the list of tokens to suppress in order to avoid any speaker tags or non-speech
-        annotations, to prevent sampling texts that are not actually spoken in the audio, e.g.
-
-        - ♪♪♪
-        - ( SPEAKING FOREIGN LANGUAGE )
-        - [DAVID] Hey there,
-
-        keeping basic punctuations like commas, periods, question marks, exclamation points, etc.
-        """
         symbols = list("\"#()*+/:;<=>@[\\]^_`{|}~「」『』")
         symbols += "<< >> <<< >>> -- --- -( -[ (' (\" (( )) ((( ))) [[ ]] {{ }} ♪♪ ♪♪♪".split()
 
-        # symbols that may be a single token or multiple tokens depending on the tokenizer.
-        # In case they're multiple tokens, suppress the first token, which is safe because:
-        # These are between U+2640 and U+267F miscellaneous symbols that are okay to suppress
-        # in generations, and in the 3-byte UTF-8 representation they share the first two bytes.
         miscellaneous = set("♩♪♫♬♭♮♯")
         assert all(0x2640 <= ord(c) <= 0x267F for c in miscellaneous)
 
-        # allow hyphens "-" and single quotes "'" between words, but not at the beginning of a word
         result = {self.tokenizer.encode(" -")[0], self.tokenizer.encode(" '")[0]}
         for symbol in symbols + list(miscellaneous):
             for tokens in [self.tokenizer.encode(symbol), self.tokenizer.encode(" " + symbol)]:
@@ -295,7 +274,7 @@ def build_tokenizer(name: str = "gpt2"):
 def get_tokenizer(
     multilingual: bool,
     *,
-    task: Optional[str] = None,  # Literal["transcribe", "translate", None]
+    task: Optional[str] = None,
     language: Optional[str] = None,
 ) -> Tokenizer:
     if language is not None:
