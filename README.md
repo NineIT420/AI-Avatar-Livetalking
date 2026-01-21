@@ -24,7 +24,7 @@ Before setting up the project, ensure you have the following installed:
 - **GPU**: NVIDIA GPU with CUDA support (recommended for AI inference acceleration)
   - Minimum: GTX 1060 or equivalent
   - Recommended: RTX 3060 or higher
-- **Storage**: Minimum 10GB free disk space
+- **Storage**: Minimum 50GB free disk space
 - **Network**: Stable internet connection (required for WebRTC streaming and model downloads)
 
 ### Software Requirements

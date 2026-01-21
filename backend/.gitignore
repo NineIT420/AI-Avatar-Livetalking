@@ -2,8 +2,6 @@ __pycache__/
 build/
 *.egg-info/
 *.so
-*.mp4
-*.aac
 tmp*
 trial*/
 
@@ -11,7 +9,6 @@ data_utils/face_tracking/3DMM/*
 data_utils/face_parsing/79999_iter.pth
 
 pretrained
-*.mp4
 .DS_Store
 workspace/log_ngp.txt
 .idea
@@ -20,7 +17,6 @@ models/musetalkV15/
 models/sd-vae/
 models/whisper/
 models/vqvae.pth
-data/*
 *.log
 dist
 .env
