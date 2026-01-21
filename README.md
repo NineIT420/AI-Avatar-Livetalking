@@ -70,12 +70,13 @@ cd LiveTalking
 #### Create Conda Environment
 
 ```bash
-# Source your bash profile (if needed)
-source ~/.bashrc
-
 # Create and activate conda environment
 conda create -n nerfstream python=3.10 -y
 conda activate nerfstream
+
+# If your CUDA version is not 12.4 (check via "nvidia-smi"), install the corresponding PyTorch version from <https://pytorch.org/get-started/previous-versions/>
+conda install pytorch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 pytorch-cuda=12.4 -c pytorch -c nvidia
+
 ```
 
 #### Install Python Dependencies
